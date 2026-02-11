@@ -1,6 +1,7 @@
 from rest_framework import generics, filters, status
 from rest_framework.response import Response
 
+from apps.common.permissions import ProfilePermission
 from .models import Product
 from .serializers import (
     ProductCreateSerializer,
@@ -11,6 +12,11 @@ from .serializers import (
 class ProductListCreateView(generics.ListCreateAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductCreateSerializer
+    permission_classes = [ProfilePermission]
+    allowed_profiles_by_method = {
+        "GET": ["admin", "manager", "operator", "viewer"],
+        "POST": ["admin", "manager"],
+    }
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["sku", "name", "description"]
     ordering_fields = ["created_at", "name", "price", "stock_qty"]
@@ -20,6 +26,10 @@ class ProductListCreateView(generics.ListCreateAPIView):
 class ProductStockUpdateView(generics.GenericAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductStockPatchSerializer
+    permission_classes = [ProfilePermission]
+    allowed_profiles_by_method = {
+        "PATCH": ["admin", "manager", "operator"],
+    }
 
     def patch(self, request, pk: int, *args, **kwargs):
         product = self.get_object()
