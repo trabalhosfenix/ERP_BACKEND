@@ -52,7 +52,7 @@
         <section id="produtos" class="tab-content active">
           <div class="content-header">
             <h2>Produtos</h2>
-            <button id="btnNewProduct" class="btn btn-primary" onclick="app.saveProduct()">➕ Novo Produto</button>
+            <button id="btnNewProduct" class="btn btn-primary" onclick="app.openProductModal()">➕ Novo Produto</button>
           </div>
           <table>
             <thead><tr><th>ID</th><th>SKU</th><th>Nome</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead>
@@ -63,7 +63,7 @@
         <section id="pedidos" class="tab-content">
           <div class="content-header">
             <h2>Pedidos</h2>
-            <button id="btnNewOrder" class="btn btn-primary" onclick="app.quickCreateOrder()">➕ Pedido rápido</button>
+            <button id="btnNewOrder" class="btn btn-primary" onclick="app.openOrderModal()">➕ Novo Pedido</button>
           </div>
           <table>
             <thead><tr><th>ID</th><th>Número</th><th>Cliente</th><th>Total</th><th>Status</th><th>Ações</th></tr></thead>
@@ -74,7 +74,7 @@
         <section id="clientes" class="tab-content">
           <div class="content-header">
             <h2>Clientes</h2>
-            <button id="btnNewCustomer" class="btn btn-primary" onclick="app.saveCustomer()">➕ Novo Cliente</button>
+            <button id="btnNewCustomer" class="btn btn-primary" onclick="app.openCustomerModal()">➕ Novo Cliente</button>
           </div>
           <table>
             <thead><tr><th>ID</th><th>Nome</th><th>CPF/CNPJ</th><th>Email</th><th>Status</th><th>Ações</th></tr></thead>

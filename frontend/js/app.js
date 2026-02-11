@@ -155,14 +155,18 @@ const app = {
     if (tabName === "usuarios" && this.can("user_manage")) this.loadUsers();
   },
 
+  // ==================== PRODUTOS ====================
   async loadProducts() {
     try {
-      const data = await this.request("/products?limit=20&offset=0");
+      const data = await this.request("/products?limit=50&offset=0");
       const tbody = document.getElementById("productsTableBody");
       tbody.innerHTML = "";
       data.results.forEach((p) => {
         const row = tbody.insertRow();
         const actions = [];
+        if (this.can("product_create")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.openProductModal(${p.id})">Editar</button>`);
+        }
         if (this.can("product_stock_update")) {
           actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateStock(${p.id}, ${p.stock_qty || 0})">Estoque</button>`);
         }
@@ -173,30 +177,87 @@ const app = {
     }
   },
 
-  async saveProduct() {
-    if (!this.can("product_create")) return this.notify("Sem permissão para criar produto.", "error");
-    const sku = `SKU-${Date.now()}`;
-    try {
-      await this.request("/products", {
-        method: "POST",
-        body: JSON.stringify({
-          sku,
-          name: `Produto ${new Date().toLocaleTimeString()}`,
-          description: "Produto criado pela tela",
-          price: "10.00",
-          stock_qty: 20,
-          is_active: true,
-        }),
+  openProductModal(productId = null) {
+    if (!this.can("product_create")) return this.notify("Sem permissão.", "error");
+
+    const isEdit = productId !== null;
+    const modal = this.createModal(isEdit ? "Editar Produto" : "Novo Produto", `
+      <div class="form-group">
+        <label>SKU *</label>
+        <input type="text" id="modalProductSku" ${isEdit ? 'disabled' : ''} />
+      </div>
+      <div class="form-group">
+        <label>Nome *</label>
+        <input type="text" id="modalProductName" />
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="modalProductDescription"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Preço *</label>
+          <input type="number" step="0.01" id="modalProductPrice" />
+        </div>
+        <div class="form-group">
+          <label>Estoque *</label>
+          <input type="number" id="modalProductStock" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="modalProductActive" checked /> Produto ativo
+        </label>
+      </div>
+    `, async () => {
+      const payload = {
+        sku: document.getElementById("modalProductSku").value.trim(),
+        name: document.getElementById("modalProductName").value.trim(),
+        description: document.getElementById("modalProductDescription").value.trim(),
+        price: document.getElementById("modalProductPrice").value,
+        stock_qty: parseInt(document.getElementById("modalProductStock").value),
+        is_active: document.getElementById("modalProductActive").checked,
+      };
+
+      if (!payload.sku || !payload.name || !payload.price) {
+        return this.notify("Preencha os campos obrigatórios.", "error");
+      }
+
+      try {
+        if (isEdit) {
+          await this.request(`/products/${productId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          this.notify("Produto atualizado com sucesso.");
+        } else {
+          await this.request("/products", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          this.notify("Produto criado com sucesso.");
+        }
+        this.closeModal();
+        this.loadProducts();
+      } catch (error) {
+        this.notify(`Erro: ${error.message}`, "error");
+      }
+    });
+
+    if (isEdit) {
+      this.request(`/products/${productId}`).then(product => {
+        document.getElementById("modalProductSku").value = product.sku;
+        document.getElementById("modalProductName").value = product.name;
+        document.getElementById("modalProductDescription").value = product.description || "";
+        document.getElementById("modalProductPrice").value = product.price;
+        document.getElementById("modalProductStock").value = product.stock_qty;
+        document.getElementById("modalProductActive").checked = product.is_active;
       });
-      this.notify("Produto criado com sucesso.");
-      this.loadProducts();
-    } catch (error) {
-      this.notify(`Erro ao criar produto: ${error.message}`, "error");
     }
   },
 
   async promptUpdateStock(productId, currentQty) {
-    if (!this.can("product_stock_update")) return this.notify("Sem permissão para atualizar estoque.", "error");
+    if (!this.can("product_stock_update")) return this.notify("Sem permissão.", "error");
     const input = prompt(`Novo estoque para produto ${productId}:`, String(currentQty));
     if (input === null) return;
     const qty = Number(input);
@@ -210,20 +271,24 @@ const app = {
       this.notify("Estoque atualizado com sucesso.");
       this.loadProducts();
     } catch (error) {
-      this.notify(`Erro ao atualizar estoque: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
+  // ==================== CLIENTES ====================
   async loadCustomers() {
     try {
-      const data = await this.request("/customers?limit=20&offset=0");
+      const data = await this.request("/customers?limit=50&offset=0");
       const tbody = document.getElementById("customersTableBody");
       tbody.innerHTML = "";
       data.results.forEach((c) => {
         const row = tbody.insertRow();
         const actions = [];
         if (this.can("customer_detail")) {
-          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.viewCustomer(${c.id})">Detalhe</button>`);
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.viewCustomer(${c.id})">Ver</button>`);
+        }
+        if (this.can("customer_create")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.openCustomerModal(${c.id})">Editar</button>`);
         }
         row.innerHTML = `<td>${c.id}</td><td>${c.name}</td><td>${c.cpf_cnpj}</td><td>${c.email}</td><td>${c.is_active ? "Ativo" : "Inativo"}</td><td>${actions.join("") || "-"}</td>`;
       });
@@ -235,41 +300,130 @@ const app = {
   async viewCustomer(customerId) {
     try {
       const customer = await this.request(`/customers/${customerId}`);
-      alert(`Cliente #${customer.id}\nNome: ${customer.name}\nCPF/CNPJ: ${customer.cpf_cnpj}\nEmail: ${customer.email}\nTelefone: ${customer.phone || "-"}\nAtivo: ${customer.is_active ? "Sim" : "Não"}`);
+      const modal = this.createModal(`Cliente #${customer.id}`, `
+        <div class="order-details-grid">
+          <div class="detail-item">
+            <label>Nome</label>
+            <div class="value">${customer.name}</div>
+          </div>
+          <div class="detail-item">
+            <label>CPF/CNPJ</label>
+            <div class="value">${customer.cpf_cnpj}</div>
+          </div>
+          <div class="detail-item">
+            <label>Email</label>
+            <div class="value">${customer.email}</div>
+          </div>
+          <div class="detail-item">
+            <label>Telefone</label>
+            <div class="value">${customer.phone || "-"}</div>
+          </div>
+          <div class="detail-item">
+            <label>Endereço</label>
+            <div class="value">${customer.address || "-"}</div>
+          </div>
+          <div class="detail-item">
+            <label>Status</label>
+            <div class="value">${customer.is_active ? "Ativo" : "Inativo"}</div>
+          </div>
+        </div>
+      `, null, "Fechar");
     } catch (error) {
-      this.notify(`Erro ao buscar detalhe do cliente: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
-  async saveCustomer() {
-    if (!this.can("customer_create")) return this.notify("Sem permissão para criar cliente.", "error");
-    try {
-      await this.request("/customers", {
-        method: "POST",
-        body: JSON.stringify({
-          name: `Cliente ${Date.now()}`,
-          cpf_cnpj: `${Math.floor(Math.random() * 10 ** 11)}`,
-          email: `cliente${Date.now()}@mail.com`,
-          phone: "11999999999",
-          address: "Rua Exemplo",
-          is_active: true,
-        }),
+  openCustomerModal(customerId = null) {
+    if (!this.can("customer_create")) return this.notify("Sem permissão.", "error");
+
+    const isEdit = customerId !== null;
+    const modal = this.createModal(isEdit ? "Editar Cliente" : "Novo Cliente", `
+      <div class="form-group">
+        <label>Nome *</label>
+        <input type="text" id="modalCustomerName" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>CPF/CNPJ *</label>
+          <input type="text" id="modalCustomerCpfCnpj" />
+        </div>
+        <div class="form-group">
+          <label>Email *</label>
+          <input type="email" id="modalCustomerEmail" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Telefone</label>
+          <input type="text" id="modalCustomerPhone" />
+        </div>
+        <div class="form-group">
+          <label>Endereço</label>
+          <input type="text" id="modalCustomerAddress" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="modalCustomerActive" checked /> Cliente ativo
+        </label>
+      </div>
+    `, async () => {
+      const payload = {
+        name: document.getElementById("modalCustomerName").value.trim(),
+        cpf_cnpj: document.getElementById("modalCustomerCpfCnpj").value.trim(),
+        email: document.getElementById("modalCustomerEmail").value.trim(),
+        phone: document.getElementById("modalCustomerPhone").value.trim(),
+        address: document.getElementById("modalCustomerAddress").value.trim(),
+        is_active: document.getElementById("modalCustomerActive").checked,
+      };
+
+      if (!payload.name || !payload.cpf_cnpj || !payload.email) {
+        return this.notify("Preencha os campos obrigatórios.", "error");
+      }
+
+      try {
+        if (isEdit) {
+          await this.request(`/customers/${customerId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          this.notify("Cliente atualizado com sucesso.");
+        } else {
+          await this.request("/customers", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          this.notify("Cliente criado com sucesso.");
+        }
+        this.closeModal();
+        this.loadCustomers();
+      } catch (error) {
+        this.notify(`Erro: ${error.message}`, "error");
+      }
+    });
+
+    if (isEdit) {
+      this.request(`/customers/${customerId}`).then(customer => {
+        document.getElementById("modalCustomerName").value = customer.name;
+        document.getElementById("modalCustomerCpfCnpj").value = customer.cpf_cnpj;
+        document.getElementById("modalCustomerEmail").value = customer.email;
+        document.getElementById("modalCustomerPhone").value = customer.phone || "";
+        document.getElementById("modalCustomerAddress").value = customer.address || "";
+        document.getElementById("modalCustomerActive").checked = customer.is_active;
       });
-      this.notify("Cliente criado com sucesso.");
-      this.loadCustomers();
-    } catch (error) {
-      this.notify(`Erro ao criar cliente: ${error.message}`, "error");
     }
   },
 
+  // ==================== PEDIDOS ====================
   async loadOrders() {
     try {
-      const data = await this.request("/orders?limit=20&offset=0");
+      const data = await this.request("/orders?limit=50&offset=0");
       const tbody = document.getElementById("ordersTableBody");
       tbody.innerHTML = "";
       data.results.forEach((o) => {
         const row = tbody.insertRow();
         const actions = [];
+        actions.push(`<button class="btn btn-small btn-secondary" onclick="app.viewOrder(${o.id})">Ver</button>`);
         if (this.can("order_status_update")) {
           actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateOrderStatus(${o.id}, '${o.status}')">Status</button>`);
         }
@@ -283,35 +437,161 @@ const app = {
     }
   },
 
-  async quickCreateOrder() {
-    if (!this.can("order_create")) return this.notify("Sem permissão para criar pedido.", "error");
-
+  async viewOrder(orderId) {
     try {
-      const customers = await this.request("/customers?limit=1&offset=0");
-      const products = await this.request("/products?limit=1&offset=0");
-      if (!customers.results.length || !products.results.length) {
-        this.notify("Crie pelo menos 1 cliente e 1 produto para gerar pedido.", "error");
-        return;
+      const order = await this.request(`/orders/${orderId}`);
+      
+      let itemsHtml = '';
+      if (order.items && order.items.length > 0) {
+        itemsHtml = `
+          <h4 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Itens do Pedido</h4>
+          <table class="order-items-table">
+            <thead>
+              <tr>
+                <th>Produto ID</th>
+                <th>Quantidade</th>
+                <th>Preço Unit.</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${order.items.map(item => `
+                <tr>
+                  <td>${item.product_id}</td>
+                  <td>${item.qty}</td>
+                  <td>R$ ${Number(item.unit_price || 0).toFixed(2)}</td>
+                  <td>R$ ${Number(item.subtotal || 0).toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       }
 
-      await this.request("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          customer_id: customers.results[0].id,
-          idempotency_key: `quick_${Date.now()}`,
-          observations: "Pedido rápido pela UI",
-          items: [{ product_id: products.results[0].id, qty: 1 }],
-        }),
-      });
-      this.notify("Pedido criado com sucesso.");
-      this.loadOrders();
+      const modal = this.createModal(`Pedido #${order.number}`, `
+        <div class="order-details-grid">
+          <div class="detail-item">
+            <label>ID</label>
+            <div class="value">${order.id}</div>
+          </div>
+          <div class="detail-item">
+            <label>Número</label>
+            <div class="value">${order.number}</div>
+          </div>
+          <div class="detail-item">
+            <label>Cliente ID</label>
+            <div class="value">${order.customer_id}</div>
+          </div>
+          <div class="detail-item">
+            <label>Status</label>
+            <div class="value">${order.status}</div>
+          </div>
+          <div class="detail-item">
+            <label>Total</label>
+            <div class="value">R$ ${Number(order.total).toFixed(2)}</div>
+          </div>
+          <div class="detail-item">
+            <label>Observações</label>
+            <div class="value">${order.observations || "-"}</div>
+          </div>
+        </div>
+        ${itemsHtml}
+      `, null, "Fechar");
     } catch (error) {
-      this.notify(`Erro ao criar pedido: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
+  async openOrderModal() {
+    if (!this.can("order_create")) return this.notify("Sem permissão.", "error");
+
+    // Carregar clientes e produtos
+    const customers = await this.request("/customers?limit=100");
+    const products = await this.request("/products?limit=100");
+
+    if (!customers.results.length || !products.results.length) {
+      return this.notify("Crie pelo menos 1 cliente e 1 produto.", "error");
+    }
+
+    const modal = this.createModal("Novo Pedido", `
+      <div class="form-group">
+        <label>Cliente *</label>
+        <select id="modalOrderCustomer">
+          ${customers.results.map(c => `<option value="${c.id}">${c.name} (${c.cpf_cnpj})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Observações</label>
+        <textarea id="modalOrderObservations"></textarea>
+      </div>
+      <div class="order-items">
+        <div class="order-items-header">
+          <h4>Itens do Pedido</h4>
+          <button type="button" class="btn-add-item" onclick="app.addOrderItem()">+ Adicionar item</button>
+        </div>
+        <div id="orderItemsContainer"></div>
+      </div>
+    `, async () => {
+      const items = [];
+      document.querySelectorAll(".order-item").forEach(item => {
+        const productId = item.querySelector(".item-product").value;
+        const qty = parseInt(item.querySelector(".item-qty").value);
+        if (productId && qty > 0) {
+          items.push({ product_id: parseInt(productId), qty });
+        }
+      });
+
+      if (items.length === 0) {
+        return this.notify("Adicione pelo menos 1 item ao pedido.", "error");
+      }
+
+      const payload = {
+        customer_id: parseInt(document.getElementById("modalOrderCustomer").value),
+        idempotency_key: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        observations: document.getElementById("modalOrderObservations").value.trim(),
+        items,
+      };
+
+      try {
+        await this.request("/orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        this.notify("Pedido criado com sucesso.");
+        this.closeModal();
+        this.loadOrders();
+      } catch (error) {
+        this.notify(`Erro: ${error.message}`, "error");
+      }
+    });
+
+    // Armazenar produtos globalmente para usar no addOrderItem
+    window._availableProducts = products.results;
+    
+    // Adicionar primeiro item
+    this.addOrderItem();
+  },
+
+  addOrderItem() {
+    const container = document.getElementById("orderItemsContainer");
+    const itemDiv = document.createElement("div");
+    itemDiv.className = "order-item";
+    itemDiv.innerHTML = `
+      <div class="form-group" style="margin: 0;">
+        <select class="item-product">
+          ${window._availableProducts.map(p => `<option value="${p.id}">${p.name} (SKU: ${p.sku}) - R$ ${Number(p.price).toFixed(2)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <input type="number" class="item-qty" value="1" min="1" placeholder="Quantidade" />
+      </div>
+      <button type="button" class="btn-remove-item" onclick="this.parentElement.remove()">Remover</button>
+    `;
+    container.appendChild(itemDiv);
+  },
+
   async promptUpdateOrderStatus(orderId, currentStatus) {
-    if (!this.can("order_status_update")) return this.notify("Sem permissão para alterar status.", "error");
+    if (!this.can("order_status_update")) return this.notify("Sem permissão.", "error");
     const status = prompt(
       `Novo status para pedido ${orderId} (atual: ${currentStatus}).\nUse: RASCUNHO, AGUARDANDO_PAGAMENTO, PAGO, EM_SEPARACAO, ENVIADO, ENTREGUE, CANCELADO`,
       currentStatus,
@@ -321,17 +601,17 @@ const app = {
     try {
       await this.request(`/orders/${orderId}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status, note: "Atualização via frontend" }),
+        body: JSON.stringify({ status: status.toUpperCase(), note: "Atualização via frontend" }),
       });
       this.notify("Status atualizado com sucesso.");
       this.loadOrders();
     } catch (error) {
-      this.notify(`Erro ao atualizar status: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
   async cancelOrder(orderId) {
-    if (!this.can("order_cancel")) return this.notify("Sem permissão para cancelar pedido.", "error");
+    if (!this.can("order_cancel")) return this.notify("Sem permissão.", "error");
     if (!confirm(`Cancelar pedido ${orderId}?`)) return;
 
     try {
@@ -342,10 +622,11 @@ const app = {
       this.notify("Pedido cancelado com sucesso.");
       this.loadOrders();
     } catch (error) {
-      this.notify(`Erro ao cancelar pedido: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
+  // ==================== USUÁRIOS ====================
   async loadUsers() {
     if (!this.can("user_manage")) return;
 
@@ -387,9 +668,12 @@ const app = {
     try {
       await this.request("/auth/users", { method: "POST", body: JSON.stringify(payload) });
       this.notify("Usuário criado com sucesso.");
+      document.getElementById("newUserUsername").value = "";
+      document.getElementById("newUserEmail").value = "";
+      document.getElementById("newUserPassword").value = "";
       this.loadUsers();
     } catch (error) {
-      this.notify(`Erro ao criar usuário: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
@@ -404,7 +688,7 @@ const app = {
       this.notify("Usuário atualizado com sucesso.");
       this.loadUsers();
     } catch (error) {
-      this.notify(`Erro ao atualizar usuário: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
@@ -421,17 +705,59 @@ const app = {
       this.notify("Perfil atualizado com sucesso.");
       this.loadUsers();
     } catch (error) {
-      this.notify(`Erro ao atualizar perfil: ${error.message}`, "error");
+      this.notify(`Erro: ${error.message}`, "error");
     }
   },
 
+  // ==================== MODAL HELPER ====================
+  createModal(title, content, onSave, saveLabel = "Salvar", cancelLabel = "Cancelar") {
+    // Remover modal existente se houver
+    this.closeModal();
+
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "appModal";
+    
+    const hasSaveButton = onSave !== null;
+    
+    overlay.innerHTML = `
+      <div class="modal">
+        <h2>${title}</h2>
+        ${content}
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="app.closeModal()">${cancelLabel}</button>
+          ${hasSaveButton ? `<button class="btn btn-primary" id="modalSaveBtn">${saveLabel}</button>` : ''}
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    if (hasSaveButton) {
+      document.getElementById("modalSaveBtn").onclick = onSave;
+    }
+    
+    // Fechar ao clicar fora
+    overlay.onclick = (e) => {
+      if (e.target === overlay) this.closeModal();
+    };
+
+    return overlay;
+  },
+
+  closeModal() {
+    const modal = document.getElementById("appModal");
+    if (modal) modal.remove();
+  },
+
+  // ==================== NOTIFICAÇÕES ====================
   notify(message, type = "success") {
     const color = type === "error" ? "#dc2626" : "#2563eb";
     const el = document.createElement("div");
     el.textContent = message;
-    el.style.cssText = `position:fixed;right:20px;top:20px;background:${color};color:white;padding:10px 14px;border-radius:8px;z-index:9999;`;
+    el.style.cssText = `position:fixed;right:20px;top:20px;background:${color};color:white;padding:10px 14px;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);`;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2600);
+    setTimeout(() => el.remove(), 3000);
   },
 };
 
