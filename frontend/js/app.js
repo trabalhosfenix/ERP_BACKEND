@@ -155,7 +155,7 @@ const app = {
   async saveProduct() {
     const sku = `SKU-${Date.now()}`;
     try {
-      await this.request("/products/", {
+      await this.request("/products", {
         method: "POST",
         body: JSON.stringify({
           sku,
@@ -189,7 +189,7 @@ const app = {
 
   async saveCustomer() {
     try {
-      await this.request("/customers/", {
+      await this.request("/customers", {
         method: "POST",
         body: JSON.stringify({
           name: `Cliente ${Date.now()}`,
@@ -230,7 +230,7 @@ const app = {
         return;
       }
 
-      await this.request("/orders/", {
+      await this.request("/orders", {
         method: "POST",
         body: JSON.stringify({
           customer_id: customers.results[0].id,
