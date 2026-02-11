@@ -1,0 +1,367 @@
+ERP – Módulo de Gestão de Pedidos
+Documentação Técnica
+1. Visão Geral
+
+O módulo de Gestão de Pedidos é responsável por:
+
+Cadastro e gestão de Clientes
+
+Cadastro e controle de Produtos
+
+Criação e acompanhamento de Pedidos
+
+Controle transacional de Estoque
+
+Histórico de status de pedidos
+
+Idempotência na criação de pedidos
+
+Garantia de consistência concorrente (race condition safe)
+
+Arquitetura baseada em Django + DRF + MySQL + Redis + Docker com separação clara entre:
+
+Camada de domínio
+
+Camada de serviços (Service Layer)
+
+Camada de API (Views/Serializers)
+
+Persistência (ORM)
+
+2. Stack Tecnológica
+Backend
+
+Python 3.12
+
+Django 6
+
+Django REST Framework
+
+MySQL 8
+
+Redis 7
+
+Infraestrutura
+
+Docker
+
+Docker Compose
+
+Testes
+
+Pytest
+
+pytest-django
+
+3. Estrutura de Pastas
+backend/
+  apps/
+    common/
+    customers/
+    products/
+    orders/
+      domain/
+      services/
+  config/
+tests/
+  unit/
+  integration/
+docker/
+docker-compose.yml
+pytest.ini
+
+apps/common
+
+Componentes reutilizáveis:
+
+health check
+
+soft delete
+
+redis client
+
+utilidades
+
+apps/customers
+
+Modelos e endpoints de clientes.
+
+apps/products
+
+Modelos e endpoints de produtos + controle de estoque.
+
+apps/orders
+
+Módulo principal de pedidos.
+
+Subdivisões:
+
+domain/ → regras puras de negócio
+
+services/ → transações e orquestração
+
+models.py → entidades persistidas
+
+views.py → API REST
+
+4. Modelos de Dados
+Customer
+
+name
+
+cpf_cnpj
+
+email
+
+phone
+
+address
+
+is_active
+
+timestamps
+
+Product
+
+sku
+
+name
+
+description
+
+price
+
+stock_qty
+
+is_active
+
+timestamps
+
+Order
+
+number (único)
+
+customer (FK)
+
+status
+
+total
+
+idempotency_key
+
+observations
+
+timestamps
+
+OrderItem
+
+order (FK)
+
+product (FK)
+
+qty
+
+unit_price
+
+subtotal
+
+OrderStatusHistory
+
+order (FK)
+
+from_status
+
+to_status
+
+changed_by
+
+note
+
+changed_at
+
+5. Regras de Negócio
+5.1 Estoque Atômico
+
+Uso de select_for_update em Product.
+
+Tudo ou nada: se faltar estoque → rollback.
+
+Cancelamento devolve estoque.
+
+5.2 Idempotência
+
+Chave: (customer_id, idempotency_key)
+
+Fluxo:
+
+Redis lookup
+
+DB lookup
+
+Unique constraint
+
+Pós-commit cache Redis
+
+5.3 Transições de Status
+
+Fluxo válido:
+
+PENDENTE → CONFIRMADO → SEPARADO → ENVIADO → ENTREGUE
+PENDENTE/CONFIRMADO → CANCELADO
+
+
+Qualquer outra transição gera ConflictError.
+
+5.4 Concorrência
+
+Lock pessimista em Product
+
+Constraint única em Order
+
+Teste multithread validando colisão real
+
+6. Camada de Serviços (OrderService)
+
+Responsável por:
+
+create_order
+
+change_status
+
+cancel_order
+
+Características:
+
+@transaction.atomic
+
+lock pessimista
+
+validação de domínio
+
+geração de histórico
+
+publicação de eventos pós-commit
+
+nunca retorna tuple (sempre Order)
+
+7. API REST
+
+Prefixo: /api/v1
+
+Customers
+
+POST /customers
+
+GET /customers
+
+GET /customers/:id
+
+Products
+
+POST /products
+
+GET /products
+
+PATCH /products/:id/stock
+
+Orders
+
+POST /orders
+
+GET /orders
+
+GET /orders/:id
+
+PATCH /orders/:id/status
+
+DELETE /orders/:id
+
+8. Healthcheck
+
+Endpoint:
+
+GET /health/
+
+
+Resposta:
+
+{
+  "status": "ok",
+  "database": true,
+  "redis": true
+}
+
+9. Testes
+Unitários
+
+Transições de status
+
+Enums
+
+Exceções
+
+Integração (DB real)
+
+criação reserva estoque
+
+idempotência não duplica
+
+cancelamento devolve estoque
+
+concorrência simultânea
+
+Execução:
+
+python -m pytest
+
+10. Docker
+Serviços
+
+backend
+
+db (MySQL)
+
+redis
+
+Subir ambiente
+docker compose up --build -d
+
+Rodar testes dentro do container
+docker compose exec backend python -m pytest
+
+11. Garantias Atuais
+Aspecto	Situação
+Consistência de estoque	Garantida
+Idempotência	Garantida
+Concorrência	Testada
+Histórico de status	Implementado
+Auditoria	Mantida
+Testes unitários	OK
+Testes integração	OK
+Healthcheck	OK
+Dockerização	OK
+12. Próximos Passos Recomendados
+
+Autenticação (JWT / Session)
+
+Permissões por perfil
+
+Swagger / OpenAPI
+
+Logs estruturados JSON
+
+CI pipeline
+
+Observabilidade (metrics)
+
+13. Estado de Maturidade
+
+O módulo encontra-se em nível funcional-robusto, apto para:
+
+ambiente de homologação
+
+testes de carga
+
+integração com front-end
+
+Faltam apenas camadas de segurança e observabilidade para produção plena.

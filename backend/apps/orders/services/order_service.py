@@ -46,48 +46,62 @@ def _generate_order_number() -> str:
     return timezone.now().strftime("%Y%m%d%H%M%S%f")
 
 
+def _order_qs():
+    return (
+        Order.objects.select_related("customer")
+        .prefetch_related("items", "items__product", "status_history")
+    )
+
+
 class OrderService:
     @staticmethod
     @transaction.atomic
-    def create_order(data: CreateOrderInput) -> tuple[Order, bool]:
+    def create_order(data: CreateOrderInput) -> Order:
         if not data.items:
-            raise BusinessError("items cannot be empty")
+            raise BusinessError("items não pode ser vazio")
+
+        if any(it.qty <= 0 for it in data.items):
+            raise BusinessError("qty deve ser maior que zero")
 
         customer = Customer.objects.filter(id=data.customer_id).first()
         if not customer:
-            raise NotFoundError("customer not found")
+            raise NotFoundError("cliente não encontrado")
         if not customer.is_active:
-            raise ConflictError("customer inactive")
+            raise ConflictError("cliente inativo")
 
+        # Idempotência: Redis (best-effort)
         redis = get_redis()
         redis_key = f"idem:order:{customer.id}:{data.idempotency_key}"
         try:
             existing_id = redis.get(redis_key)
             if existing_id:
-                return Order.objects.prefetch_related("items").get(id=int(existing_id)), False
+                return _order_qs().get(id=int(existing_id))
         except Exception:
             pass
 
-        existing = Order.objects.filter(customer=customer, idempotency_key=data.idempotency_key).first()
+        # Idempotência: banco (fonte de verdade)
+        existing = _order_qs().filter(customer=customer, idempotency_key=data.idempotency_key).first()
         if existing:
-            return existing, False
+            return existing
 
         product_ids = [it.product_id for it in data.items]
-        if any(it.qty <= 0 for it in data.items):
-            raise BusinessError("qty must be greater than zero")
 
+        # Lock pessimista dos produtos
         products = list(Product.objects.select_for_update().filter(id__in=product_ids))
         if len(products) != len(set(product_ids)):
-            raise NotFoundError("one or more products were not found")
+            raise NotFoundError("um ou mais produtos não foram encontrados")
+
         products_by_id = {p.id: p for p in products}
 
+        # Valida ativo + estoque suficiente (tudo ou nada)
         for it in data.items:
             product = products_by_id[it.product_id]
             if not product.is_active:
-                raise ConflictError(f"product {product.id} is inactive")
+                raise ConflictError(f"produto {product.id} inativo")
             if product.stock_qty < it.qty:
-                raise ConflictError(f"insufficient stock for SKU {product.sku}")
+                raise ConflictError(f"estoque insuficiente para SKU {product.sku}")
 
+        # Criar pedido (race-safe via unique constraint)
         try:
             order = Order.objects.create(
                 customer=customer,
@@ -98,55 +112,94 @@ class OrderService:
                 total=Decimal("0.00"),
             )
         except IntegrityError:
-            existing = Order.objects.get(customer=customer, idempotency_key=data.idempotency_key)
-            return existing, False
+            return _order_qs().get(customer=customer, idempotency_key=data.idempotency_key)
 
         total = Decimal("0.00")
+
         for it in data.items:
             product = products_by_id[it.product_id]
-            subtotal = Decimal(product.price) * Decimal(it.qty)
-            product.stock_qty -= it.qty
+            unit_price = Decimal(product.price)
+            subtotal = unit_price * Decimal(int(it.qty))
+
+            product.stock_qty -= int(it.qty)
             product.save(update_fields=["stock_qty", "updated_at"])
-            OrderItem.objects.create(order=order, product=product, qty=it.qty, unit_price=product.price, subtotal=subtotal)
+
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                qty=int(it.qty),
+                unit_price=unit_price,
+                subtotal=subtotal,
+            )
             total += subtotal
 
         order.total = total
         order.save(update_fields=["total", "updated_at"])
-        OrderStatusHistory.objects.create(order=order, from_status=OrderStatus.PENDENTE, to_status=OrderStatus.PENDENTE, note="order created")
 
-        try:
-            redis.setex(redis_key, 60 * 60 * 24, order.id)
-        except Exception:
-            pass
-        return order, True
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=OrderStatus.PENDENTE,
+            to_status=OrderStatus.PENDENTE,
+            changed_by=None,
+            note="pedido criado",
+        )
+
+        # Redis pós-commit (não afeta transação)
+        def _after_commit():
+            try:
+                redis.setex(redis_key, 60 * 60 * 24, order.id)
+            except Exception:
+                pass
+
+        transaction.on_commit(_after_commit)
+
+        return _order_qs().get(id=order.id)
 
     @staticmethod
     @transaction.atomic
     def change_status(order_id: int, new_status: str, user=None, note: str = "") -> Order:
         order = Order.objects.select_for_update().filter(id=order_id).first()
         if not order:
-            raise NotFoundError("order not found")
+            raise NotFoundError("pedido não encontrado")
 
         if not can_transition(order.status, new_status):
-            raise ConflictError(f"invalid status transition {order.status} -> {new_status}")
+            raise ConflictError(f"transição inválida {order.status} -> {new_status}")
 
         old = order.status
         order.status = new_status
         order.save(update_fields=["status", "updated_at"])
-        OrderStatusHistory.objects.create(order=order, from_status=old, to_status=new_status, changed_by=user, note=note)
-        publish_order_status_changed(order, old, new_status, note)
-        return order
+
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=old,
+            to_status=new_status,
+            changed_by=user,
+            note=note or "",
+        )
+
+        def _after_commit():
+            try:
+                publish_order_status_changed(order, old, new_status, note or "")
+            except Exception:
+                pass
+
+        transaction.on_commit(_after_commit)
+
+        return _order_qs().get(id=order.id)
 
     @staticmethod
     @transaction.atomic
     def cancel_order(order_id: int, user=None, note: str = "") -> Order:
         order = Order.objects.select_for_update().filter(id=order_id).first()
         if not order:
-            raise NotFoundError("order not found")
-        if order.status not in [OrderStatus.PENDENTE, OrderStatus.CONFIRMADO]:
-            raise ConflictError("order cannot be canceled in current status")
+            raise NotFoundError("pedido não encontrado")
 
-        for item in order.items.select_related("product"):
+        if order.status not in [OrderStatus.PENDENTE, OrderStatus.CONFIRMADO]:
+            raise ConflictError("pedido não pode ser cancelado no status atual")
+
+        items = list(order.items.select_related("product").all())
+
+        for item in items:
             product = Product.objects.select_for_update().get(id=item.product_id)
             product.stock_qty += item.qty
             product.save(update_fields=["stock_qty", "updated_at"])
@@ -154,7 +207,22 @@ class OrderService:
         old = order.status
         order.status = OrderStatus.CANCELADO
         order.save(update_fields=["status", "updated_at"])
-        OrderStatusHistory.objects.create(order=order, from_status=old, to_status=OrderStatus.CANCELADO, changed_by=user, note=note or "canceled")
-        publish_order_status_changed(order, old, OrderStatus.CANCELADO, note)
-        order.delete()
-        return order
+
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=old,
+            to_status=OrderStatus.CANCELADO,
+            changed_by=user,
+            note=note or "pedido cancelado",
+        )
+
+        def _after_commit():
+            try:
+                publish_order_status_changed(order, old, OrderStatus.CANCELADO, note or "")
+            except Exception:
+                pass
+
+        transaction.on_commit(_after_commit)
+
+        # IMPORTANTE: não deletar o pedido (auditoria / histórico)
+        return _order_qs().get(id=order.id)

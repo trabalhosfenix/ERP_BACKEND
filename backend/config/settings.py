@@ -22,17 +22,19 @@ INSTALLED_APPS = [
     "apps.customers",
     "apps.products",
     "apps.orders",
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.common.middleware.RateLimitMiddleware",
+    'corsheaders.middleware.CorsMiddleware',  
+    'django.middleware.common.CommonMiddleware',
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -57,7 +59,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 if os.getenv("DB_ENGINE", "mysql") == "sqlite":
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
+            "ENGINE": "mysql.connector.django",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
@@ -97,10 +99,17 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "ERP Orders API",
-    "DESCRIPTION": "API de gestão de pedidos",
+    "TITLE": "ERP API",
+    "DESCRIPTION": "Módulo de pedidos.",
     "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+
+    "ENUM_NAME_OVERRIDES": {
+        "OrderStatusEnum": "apps.orders.domain.enums.OrderStatus",
+    },
 }
+
+
 
 LOGGING = {
     "version": 1,
@@ -113,3 +122,44 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "json"}},
     "root": {"handlers": ["console"], "level": "INFO"},
 }
+
+
+# Permite todas as origens em desenvolvimento
+CORS_ALLOW_ALL_ORIGINS = True  # Apenas para desenvolvimento!
+
+# Ou permitir origens específicas
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+]
+
+# Permite cookies/autenticação
+CORS_ALLOW_CREDENTIALS = True
+
+# Headers permitidos
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Métodos permitidos
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+APPEND_SLASH = True
+

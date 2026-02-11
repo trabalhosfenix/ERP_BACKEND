@@ -54,3 +54,13 @@ class OrderOutSerializer(serializers.ModelSerializer):
 class OrderStatusPatchSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=OrderStatus.choices)
     note = serializers.CharField(required=False, allow_blank=True, default="")
+
+class OrderDetailSerializer(OrderOutSerializer):
+    pass
+
+
+class OrderListSerializer(OrderOutSerializer):
+    pass
+
+
+

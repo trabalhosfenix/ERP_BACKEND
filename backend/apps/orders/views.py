@@ -1,27 +1,46 @@
-from django.db import OperationalError
-from rest_framework import filters, generics, status
+from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.orders.models import Order
-from .serializers import OrderCreateSerializer, OrderOutSerializer, OrderStatusPatchSerializer
-from .services.order_service import BusinessError, CreateOrderInput, CreateOrderItemInput, OrderService
+from apps.orders.serializers import (
+    OrderCreateSerializer,
+    OrderDetailSerializer,
+    OrderListSerializer,
+    OrderStatusPatchSerializer,
+)
+from apps.orders.services.order_service import (
+    OrderService,
+    CreateOrderInput,
+    CreateOrderItemInput,
+    BusinessError,
+    ConflictError,
+    NotFoundError,
+)
 
 
 class OrderListCreateView(generics.ListCreateAPIView):
-    queryset = Order.objects.prefetch_related("items", "status_history").select_related("customer").all().order_by("-created_at")
-    serializer_class = OrderOutSerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["number", "status", "customer__name"]
-    ordering_fields = ["created_at", "total", "status", "number"]
+    queryset = Order.objects.all().order_by("-created_at")
+    serializer_class = OrderListSerializer
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return OrderCreateSerializer
+        return OrderListSerializer
 
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # Para cumprir o contrato dos testes:
+        # primeira criação => 201, retries idempotentes => 200
+        existed = Order.objects.filter(
+            customer_id=data["customer_id"],
+            idempotency_key=data["idempotency_key"],
+        ).exists()
+
         try:
-            order, created = OrderService.create_order(
+            order = OrderService.create_order(
                 CreateOrderInput(
                     customer_id=data["customer_id"],
                     idempotency_key=data["idempotency_key"],
@@ -29,48 +48,56 @@ class OrderListCreateView(generics.ListCreateAPIView):
                     items=[CreateOrderItemInput(**item) for item in data["items"]],
                 )
             )
-        except BusinessError as exc:
-            return Response({"detail": str(exc)}, status=getattr(exc, "status_code", 400))
-        except OperationalError:
-            return Response({"detail": "concurrent write conflict"}, status=409)
+        except NotFoundError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ConflictError as e:
+            # Estoque insuficiente / produto inativo / cliente inativo etc.
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except BusinessError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        return Response(OrderOutSerializer(order).data, status=code)
+        payload = OrderDetailSerializer(order).data
+        return Response(payload, status=status.HTTP_200_OK if existed else status.HTTP_201_CREATED)
 
 
-class OrderDetailCancelView(APIView):
-    def get(self, request, pk: int):
-        order = generics.get_object_or_404(Order.objects.prefetch_related("items", "status_history").select_related("customer"), pk=pk)
-        return Response(OrderOutSerializer(order).data)
+class OrderDetailCancelView(generics.RetrieveDestroyAPIView):
+    queryset = Order.objects.all()
+    serializer_class = OrderDetailSerializer
 
-    def delete(self, request, pk: int):
+    def delete(self, request, *args, **kwargs):
+        order = self.get_object()
+        note = ""
+        if isinstance(request.data, dict):
+            note = request.data.get("note", "") or ""
+
         try:
-            order = OrderService.cancel_order(
-                order_id=pk,
-                user=request.user if request.user.is_authenticated else None,
-                note="canceled via api",
-            )
-        except BusinessError as exc:
-            return Response({"detail": str(exc)}, status=getattr(exc, "status_code", 400))
-        except OperationalError:
-            return Response({"detail": "concurrent write conflict"}, status=409)
-        return Response(OrderOutSerializer(order).data)
+            order = OrderService.cancel_order(order_id=order.id, user=None, note=note)
+        except ConflictError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except BusinessError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(OrderDetailSerializer(order).data, status=status.HTTP_200_OK)
 
 
-class OrderStatusPatchView(APIView):
-    def patch(self, request, pk: int):
+class OrderStatusPatchView(generics.GenericAPIView):
+    queryset = Order.objects.all()
+    serializer_class = OrderStatusPatchSerializer
+
+    def patch(self, request, *args, **kwargs):
+        order = self.get_object()
+
         serializer = OrderStatusPatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            order = OrderService.change_status(
-                order_id=pk,
-                new_status=serializer.validated_data["status"],
-                user=request.user if request.user.is_authenticated else None,
-                note=serializer.validated_data.get("note", ""),
-            )
-        except BusinessError as exc:
-            return Response({"detail": str(exc)}, status=getattr(exc, "status_code", 400))
-        except OperationalError:
-            return Response({"detail": "concurrent write conflict"}, status=409)
-        return Response(OrderOutSerializer(order).data)
 
+        new_status = serializer.validated_data["status"]
+        note = serializer.validated_data.get("note", "") or ""
+
+        try:
+            order = OrderService.change_status(order_id=order.id, new_status=new_status, user=None, note=note)
+        except ConflictError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except BusinessError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(OrderDetailSerializer(order).data, status=status.HTTP_200_OK)
