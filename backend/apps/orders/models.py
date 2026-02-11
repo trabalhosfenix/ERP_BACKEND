@@ -35,6 +35,10 @@ class OrderItem(models.Model):
 
     class Meta:
         db_table = "order_items"
+        indexes = [
+            models.Index(fields=["order"]),
+            models.Index(fields=["product"]),
+        ]
 
 
 class OrderStatusHistory(models.Model):
@@ -47,6 +51,9 @@ class OrderStatusHistory(models.Model):
 
     class Meta:
         db_table = "order_status_history"
+        indexes = [
+            models.Index(fields=["order", "changed_at"]),
+        ]
 
 
 class OrderDomainEvent(models.Model):
