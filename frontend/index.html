@@ -1,262 +1,113 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controle de Estoque - ERP</title>
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ERP - Gestão</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
     <header>
-        <h1>🛒 Controle de Estoque</h1>
-        <div class="auth-section">
-            <input type="text" id="username" placeholder="Usuário">
-            <input type="password" id="password" placeholder="Senha">
-            <button onclick="app.login()">Login</button>
-        </div>
+      <h1>🛒 ERP - Gestão Operacional</h1>
+      <div id="userBadge" class="user-badge hidden">
+        <span id="currentUserLabel"></span>
+        <button class="btn btn-danger btn-small" onclick="app.logout()">Logout</button>
+      </div>
     </header>
 
     <main>
-        <div class="tabs">
-            <button class="tab-button active" onclick="app.showTab('produtos')">📦 Produtos</button>
-            <button class="tab-button" onclick="app.showTab('pedidos')">📋 Pedidos</button>
-            <button class="tab-button" onclick="app.showTab('clientes')">👥 Clientes</button>
+      <section id="authPanel" class="auth-panel">
+        <div class="auth-card">
+          <h2>Entrar</h2>
+          <input type="text" id="loginUsername" placeholder="Usuário" />
+          <input type="password" id="loginPassword" placeholder="Senha" />
+          <button class="btn btn-primary" onclick="app.login()">Login</button>
         </div>
 
-        <!-- Seção de Produtos -->
+        <div class="auth-card">
+          <h2>Criar conta</h2>
+          <input type="text" id="registerUsername" placeholder="Usuário" />
+          <input type="email" id="registerEmail" placeholder="Email" />
+          <input type="password" id="registerPassword" placeholder="Senha" />
+          <select id="registerProfile">
+            <option value="viewer">viewer</option>
+            <option value="operator">operator</option>
+            <option value="manager">manager</option>
+            <option value="admin">admin</option>
+          </select>
+          <button class="btn btn-secondary" onclick="app.register()">Criar login</button>
+        </div>
+      </section>
+
+      <section id="appPanel" class="hidden">
+        <div class="tabs">
+          <button class="tab-button active" data-tab="produtos" onclick="app.showTab('produtos', event)">📦 Produtos</button>
+          <button class="tab-button" data-tab="pedidos" onclick="app.showTab('pedidos', event)">📋 Pedidos</button>
+          <button class="tab-button" data-tab="clientes" onclick="app.showTab('clientes', event)">👥 Clientes</button>
+          <button class="tab-button" data-tab="usuarios" onclick="app.showTab('usuarios', event)">🔐 Usuários</button>
+        </div>
+
         <section id="produtos" class="tab-content active">
-            <div class="content-header">
-                <h2>Produtos</h2>
-                <button onclick="app.showProductModal()" class="btn btn-primary">➕ Novo Produto</button>
-            </div>
-            <div class="search-bar">
-                <input type="text" id="productSearch" placeholder="Buscar produtos...">
-                <button onclick="app.loadProducts()" class="btn btn-secondary">🔍 Buscar</button>
-            </div>
-            <div class="table-container">
-                <table id="productsTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>SKU</th>
-                            <th>Nome</th>
-                            <th>Preço</th>
-                            <th>Estoque</th>
-                            <th>Status</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="productsTableBody"></tbody>
-                </table>
-            </div>
-            <div class="pagination" id="productsPagination"></div>
+          <div class="content-header">
+            <h2>Produtos</h2>
+            <button id="btnNewProduct" class="btn btn-primary" onclick="app.saveProduct()">➕ Novo Produto</button>
+          </div>
+          <div class="search-bar">
+            <input type="text" id="productSearch" placeholder="Buscar produtos..." />
+            <button class="btn btn-secondary" onclick="app.loadProducts()">Buscar</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>SKU</th><th>Nome</th><th>Preço</th><th>Estoque</th><th>Status</th></tr></thead>
+            <tbody id="productsTableBody"></tbody>
+          </table>
         </section>
 
-        <!-- Seção de Pedidos -->
         <section id="pedidos" class="tab-content">
-            <div class="content-header">
-                <h2>Pedidos</h2>
-                <button onclick="app.showOrderModal()" class="btn btn-primary">➕ Novo Pedido</button>
-            </div>
-            <div class="search-bar">
-                <input type="text" id="orderSearch" placeholder="Buscar pedidos...">
-                <button onclick="app.loadOrders()" class="btn btn-secondary">🔍 Buscar</button>
-            </div>
-            <div class="table-container">
-                <table id="ordersTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Número</th>
-                            <th>Cliente</th>
-                            <th>Data</th>
-                            <th>Total</th>
-                            <th>Status</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ordersTableBody"></tbody>
-                </table>
-            </div>
-            <div class="pagination" id="ordersPagination"></div>
+          <div class="content-header">
+            <h2>Pedidos</h2>
+            <button id="btnNewOrder" class="btn btn-primary" onclick="app.quickCreateOrder()">➕ Pedido rápido</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>Número</th><th>Cliente</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody id="ordersTableBody"></tbody>
+          </table>
         </section>
 
-        <!-- Seção de Clientes -->
         <section id="clientes" class="tab-content">
-            <div class="content-header">
-                <h2>Clientes</h2>
-                <button onclick="app.showCustomerModal()" class="btn btn-primary">➕ Novo Cliente</button>
-            </div>
-            <div class="search-bar">
-                <input type="text" id="customerSearch" placeholder="Buscar clientes...">
-                <button onclick="app.loadCustomers()" class="btn btn-secondary">🔍 Buscar</button>
-            </div>
-            <div class="table-container">
-                <table id="customersTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nome</th>
-                            <th>CPF/CNPJ</th>
-                            <th>Email</th>
-                            <th>Telefone</th>
-                            <th>Status</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="customersTableBody"></tbody>
-                </table>
-            </div>
-            <div class="pagination" id="customersPagination"></div>
+          <div class="content-header">
+            <h2>Clientes</h2>
+            <button id="btnNewCustomer" class="btn btn-primary" onclick="app.saveCustomer()">➕ Novo Cliente</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>Nome</th><th>CPF/CNPJ</th><th>Email</th><th>Status</th></tr></thead>
+            <tbody id="customersTableBody"></tbody>
+          </table>
         </section>
+
+        <section id="usuarios" class="tab-content">
+          <div class="content-header">
+            <h2>Setor de Usuários</h2>
+          </div>
+          <div id="userCreateBox" class="inline-form hidden">
+            <input type="text" id="newUserUsername" placeholder="Usuário" />
+            <input type="email" id="newUserEmail" placeholder="Email" />
+            <input type="password" id="newUserPassword" placeholder="Senha" />
+            <select id="newUserProfile">
+              <option value="viewer">viewer</option>
+              <option value="operator">operator</option>
+              <option value="manager">manager</option>
+              <option value="admin">admin</option>
+            </select>
+            <button class="btn btn-primary" onclick="app.createManagedUser()">Criar usuário</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>Usuário</th><th>Email</th><th>Perfis</th><th>Ativo</th><th>Ações</th></tr></thead>
+            <tbody id="usersTableBody"></tbody>
+          </table>
+        </section>
+      </section>
     </main>
 
-    <!-- Modal de Produto -->
-    <div id="productModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="app.closeProductModal()">&times;</span>
-            <h3 id="productModalTitle">Novo Produto</h3>
-            <form id="productForm">
-                <input type="hidden" id="productId">
-                <div class="form-group">
-                    <label for="productSku">SKU:</label>
-                    <input type="text" id="productSku" required>
-                </div>
-                <div class="form-group">
-                    <label for="productName">Nome:</label>
-                    <input type="text" id="productName" required>
-                </div>
-                <div class="form-group">
-                    <label for="productDescription">Descrição:</label>
-                    <textarea id="productDescription"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="productPrice">Preço:</label>
-                    <input type="number" id="productPrice" step="0.01" required>
-                </div>
-                <div class="form-group">
-                    <label for="productStock">Estoque:</label>
-                    <input type="number" id="productStock" min="0" required>
-                </div>
-                <div class="form-group">
-                    <label for="productActive">Ativo:</label>
-                    <input type="checkbox" id="productActive" checked>
-                </div>
-                <button type="submit" class="btn btn-success">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal de Atualização de Estoque -->
-    <div id="stockModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="app.closeStockModal()">&times;</span>
-            <h3>Atualizar Estoque</h3>
-            <form id="stockForm">
-                <input type="hidden" id="stockProductId">
-                <div class="form-group">
-                    <label for="stockQty">Quantidade:</label>
-                    <input type="number" id="stockQty" min="0" required>
-                </div>
-                <button type="submit" class="btn btn-success">Atualizar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal de Cliente -->
-    <div id="customerModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="app.closeCustomerModal()">&times;</span>
-            <h3>Novo Cliente</h3>
-            <form id="customerForm">
-                <div class="form-group">
-                    <label for="customerName">Nome:</label>
-                    <input type="text" id="customerName" required>
-                </div>
-                <div class="form-group">
-                    <label for="customerCpfCnpj">CPF/CNPJ:</label>
-                    <input type="text" id="customerCpfCnpj" required>
-                </div>
-                <div class="form-group">
-                    <label for="customerEmail">Email:</label>
-                    <input type="email" id="customerEmail" required>
-                </div>
-                <div class="form-group">
-                    <label for="customerPhone">Telefone:</label>
-                    <input type="text" id="customerPhone">
-                </div>
-                <div class="form-group">
-                    <label for="customerAddress">Endereço:</label>
-                    <textarea id="customerAddress"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="customerActive">Ativo:</label>
-                    <input type="checkbox" id="customerActive" checked>
-                </div>
-                <button type="submit" class="btn btn-success">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal de Pedido -->
-    <div id="orderModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="app.closeOrderModal()">&times;</span>
-            <h3>Novo Pedido</h3>
-            <form id="orderForm">
-                <div class="form-group">
-                    <label for="orderCustomer">Cliente:</label>
-                    <select id="orderCustomer" required>
-                        <option value="">Selecione um cliente</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="orderObservations">Observações:</label>
-                    <textarea id="orderObservations"></textarea>
-                </div>
-                <h4>Itens do Pedido</h4>
-                <div id="orderItems">
-                    <div class="order-item">
-                        <select class="product-select" required>
-                            <option value="">Selecione um produto</option>
-                        </select>
-                        <input type="number" class="item-qty" min="1" placeholder="Quantidade" required>
-                        <button type="button" onclick="app.removeOrderItem(this)" class="btn btn-danger btn-small">Remover</button>
-                    </div>
-                </div>
-                <button type="button" onclick="app.addOrderItem()" class="btn btn-secondary">➕ Adicionar Item</button>
-                <button type="submit" class="btn btn-success">Criar Pedido</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal de Status do Pedido -->
-    <div id="statusModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="app.closeStatusModal()">&times;</span>
-            <h3>Atualizar Status do Pedido</h3>
-            <form id="statusForm">
-                <input type="hidden" id="statusOrderId">
-                <div class="form-group">
-                    <label for="orderStatus">Status:</label>
-                    <select id="orderStatus" required>
-                        <option value="PENDENTE">PENDENTE</option>
-                        <option value="CONFIRMADO">CONFIRMADO</option>
-                        <option value="SEPARADO">SEPARADO</option>
-                        <option value="ENVIADO">ENVIADO</option>
-                        <option value="ENTREGUE">ENTREGUE</option>
-                        <option value="CANCELADO">CANCELADO</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="statusNote">Observação:</label>
-                    <input type="text" id="statusNote">
-                </div>
-                <button type="submit" class="btn btn-success">Atualizar</button>
-            </form>
-        </div>
-    </div>
-
     <script src="js/app.js"></script>
-</body>
+  </body>
 </html>
