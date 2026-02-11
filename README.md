@@ -143,3 +143,6 @@ DB_ENGINE=sqlite pytest
 
 ## Decisões arquiteturais
 Veja `ARCHITECTURE.md` para visão técnica completa (camadas, transações, idempotência, concorrência, eventos e compatibilidade).
+
+## Guia operacional Docker
+Para um roteiro de inicialização + smoke test completo no ambiente Docker, consulte `docs/GUIA_DOCKER_TESTES.md`.
