@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from django.contrib.auth.models import Group, User
 from rest_framework.test import APIClient
 
 from apps.customers.models import Customer
@@ -78,3 +79,38 @@ def test_concurrent_stock_reservation_only_one_order_accepted():
     assert sorted(statuses) == [201, 409]
     product.refresh_from_db()
     assert product.stock_qty == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_patch_order_status_route_with_id_param_alias():
+    customer = Customer.objects.create(name="Alias", cpf_cnpj="126", email="alias@test.com")
+    product = Product.objects.create(sku="SKU6", name="P6", price="15.00", stock_qty=10)
+
+    group, _ = Group.objects.get_or_create(name="operator")
+    user = User.objects.create_user(username="operator_patch", password="123456")
+    user.groups.add(group)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    create_response = client.post(
+        "/api/v1/orders",
+        {
+            "customer_id": customer.id,
+            "idempotency_key": "idem-alias-status",
+            "items": [{"product_id": product.id, "qty": 1}],
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+
+    order_id = create_response.json()["id"]
+    status_response = client.patch(
+        f"/api/v1/orders/{order_id}/status",
+        {"status": "CONFIRMADO", "note": "aprovado"},
+        format="json",
+    )
+
+    assert status_response.status_code == 200
+    body = status_response.json()
+    assert body["status"] == "CONFIRMADO"
+    assert body["id"] == order_id
