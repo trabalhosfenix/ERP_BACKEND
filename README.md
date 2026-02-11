@@ -18,6 +18,8 @@ API REST em Django REST Framework para módulo de pedidos de ERP, com foco em co
 - Fluxo de status com validação de transições
 - Histórico de status
 - Domain events para transição de status (publicação e consumo)
+- Autenticação por JWT e por sessão
+- Permissões por perfil (admin, manager, operator, viewer)
 - Soft delete (`deleted_at`) para entidades críticas
 - Paginação, busca e ordenação nos endpoints de listagem
 - Rate limiting básico via Redis por IP
@@ -33,6 +35,15 @@ API REST em Django REST Framework para módulo de pedidos de ERP, com foco em co
 - `POST /api/v1/orders`
 - `GET /api/v1/orders`
 - `GET /api/v1/orders/:id`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/jwt/login`
+- `POST /api/v1/auth/jwt/refresh`
+- `POST /api/v1/auth/session/login`
+- `POST /api/v1/auth/session/logout`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/auth/users`
+- `POST /api/v1/auth/users`
+- `PATCH /api/v1/auth/users/:id`
 - `PATCH /api/v1/orders/:id/status`
 - `DELETE /api/v1/orders/:id`
 
@@ -62,3 +73,8 @@ DB_ENGINE=sqlite pytest
 
 ## Decisões arquiteturais
 Ver `ARCHITECTURE.md`.
+
+
+## Frontend (template)
+- O template base está em `frontend/index.html` com estilos em `frontend/css/style.css` e lógica em `frontend/js/app.js`.
+- Inclui fluxo de login, criação de login, logout e setor de usuários com permissões por perfil.
