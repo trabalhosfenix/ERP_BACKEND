@@ -28,7 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "username", "email", "first_name", "last_name", "is_active", "profiles"]
 
-    def get_profiles(self, obj):
+    def get_profiles(self, obj) -> list[str]:
         return list(obj.groups.values_list("name", flat=True))
 
 
@@ -70,3 +70,12 @@ class UserUpdateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         raise NotImplementedError
+
+
+class SessionLoginRequestSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
+
+
+class MessageSerializer(serializers.Serializer):
+    detail = serializers.CharField()
