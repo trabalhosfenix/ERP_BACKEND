@@ -140,7 +140,7 @@ const app = {
 
   async loadProducts() {
     try {
-      const data = await this.request("/products/?limit=20&offset=0");
+      const data = await this.request("/products?limit=20&offset=0");
       const tbody = document.getElementById("productsTableBody");
       tbody.innerHTML = "";
       data.results.forEach((p) => {
@@ -175,7 +175,7 @@ const app = {
 
   async loadCustomers() {
     try {
-      const data = await this.request("/customers/?limit=20&offset=0");
+      const data = await this.request("/customers?limit=20&offset=0");
       const tbody = document.getElementById("customersTableBody");
       tbody.innerHTML = "";
       data.results.forEach((c) => {
@@ -209,7 +209,7 @@ const app = {
 
   async loadOrders() {
     try {
-      const data = await this.request("/orders/?limit=20&offset=0");
+      const data = await this.request("/orders?limit=20&offset=0");
       const tbody = document.getElementById("ordersTableBody");
       tbody.innerHTML = "";
       data.results.forEach((o) => {
@@ -223,8 +223,8 @@ const app = {
 
   async quickCreateOrder() {
     try {
-      const customers = await this.request("/customers/?limit=1&offset=0");
-      const products = await this.request("/products/?limit=1&offset=0");
+      const customers = await this.request("/customers?limit=1&offset=0");
+      const products = await this.request("/products?limit=1&offset=0");
       if (!customers.results.length || !products.results.length) {
         this.notify("Crie pelo menos 1 cliente e 1 produto para gerar pedido.", "error");
         return;
