@@ -257,11 +257,33 @@ const app = {
   },
 
   async promptUpdateStock(productId, currentQty) {
-    if (!this.can("product_stock_update")) return this.notify("Sem permissão.", "error");
-    const input = prompt(`Novo estoque para produto ${productId}:`, String(currentQty));
-    if (input === null) return;
-    const qty = Number(input);
-    if (Number.isNaN(qty)) return this.notify("Quantidade inválida.", "error");
+    if (!this.can("product_stock_update")) return this.notify("Sem permissão para atualizar estoque.", "error");
+    
+    const { value: qty } = await Swal.fire({
+      title: `Atualizar Estoque - Produto #${productId}`,
+      html: `
+        <div style="text-align: left;">
+          <p style="margin-bottom: 1rem; color: #666;">Estoque atual: <strong>${currentQty} unidades</strong></p>
+          <label for="swal-stock" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Nova Quantidade:</label>
+          <input type="number" id="swal-stock" class="swal2-input" value="${currentQty}" min="0" style="width: 100%; padding: 0.75rem;">
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Atualizar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#667eea',
+      preConfirm: () => {
+        const value = parseInt(document.getElementById('swal-stock').value);
+        if (isNaN(value) || value < 0) {
+          Swal.showValidationMessage('Digite uma quantidade válida (número inteiro não negativo)');
+          return false;
+        }
+        return value;
+      }
+    });
+
+    if (qty === undefined) return;
 
     try {
       await this.request(`/products/${productId}/stock`, {
@@ -591,38 +613,92 @@ const app = {
   },
 
   async promptUpdateOrderStatus(orderId, currentStatus) {
-    if (!this.can("order_status_update")) return this.notify("Sem permissão.", "error");
-    const status = prompt(
-      `Novo status para pedido ${orderId} (atual: ${currentStatus}).\nUse: RASCUNHO, AGUARDANDO_PAGAMENTO, PAGO, EM_SEPARACAO, ENVIADO, ENTREGUE, CANCELADO`,
-      currentStatus,
-    );
-    if (!status) return;
+    if (!this.can("order_status_update")) return this.notify("Sem permissão para alterar status.", "error");
+    
+    const statusOptions = {
+      'PENDENTE': 'Pendente',
+      'CONFIRMADO': 'Confirmado',
+      'SEPARADO': 'Separado',
+      'ENVIADO': 'Enviado',
+      'ENTREGUE': 'Entregue',
+      'CANCELADO': 'Cancelado'
+    };
+
+    const { value: formValues } = await Swal.fire({
+      title: `Atualizar Status do Pedido #${orderId}`,
+      html: `
+        <div style="text-align: left;">
+          <p style="margin-bottom: 1rem; color: #666;">Status atual: <strong>${statusOptions[currentStatus] || currentStatus}</strong></p>
+          <label for="swal-status" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Novo Status:</label>
+          <select id="swal-status" class="swal2-input" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem;">
+            ${Object.entries(statusOptions).map(([value, label]) => 
+              `<option value="${value}" ${value === currentStatus ? 'selected' : ''}>${label}</option>`
+            ).join('')}
+          </select>
+          <label for="swal-note" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Observação (opcional):</label>
+          <textarea id="swal-note" class="swal2-textarea" placeholder="Adicione uma observação sobre a mudança de status..." style="width: 100%; min-height: 80px;"></textarea>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Atualizar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#667eea',
+      preConfirm: () => {
+        return {
+          status: document.getElementById('swal-status').value,
+          note: document.getElementById('swal-note').value || 'Atualização via frontend'
+        }
+      }
+    });
+
+    if (!formValues) return;
 
     try {
       await this.request(`/orders/${orderId}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: status.toUpperCase(), note: "Atualização via frontend" }),
+        body: JSON.stringify(formValues),
       });
       this.notify("Status atualizado com sucesso.");
       this.loadOrders();
     } catch (error) {
-      this.notify(`Erro: ${error.message}`, "error");
+      this.notify(`Erro ao atualizar status: ${error.message}`, "error");
     }
   },
 
   async cancelOrder(orderId) {
-    if (!this.can("order_cancel")) return this.notify("Sem permissão.", "error");
-    if (!confirm(`Cancelar pedido ${orderId}?`)) return;
+    if (!this.can("order_cancel")) return this.notify("Sem permissão para cancelar pedido.", "error");
+    
+    const result = await Swal.fire({
+      title: 'Cancelar pedido?',
+      html: `Tem certeza que deseja cancelar o pedido <strong>#${orderId}</strong>?<br><small>Esta ação não pode ser desfeita.</small>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#f56565',
+      cancelButtonColor: '#718096',
+      confirmButtonText: 'Sim, cancelar',
+      cancelButtonText: 'Não'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       await this.request(`/orders/${orderId}`, {
         method: "DELETE",
         body: JSON.stringify({ note: "Cancelado via frontend" }),
       });
-      this.notify("Pedido cancelado com sucesso.");
+      
+      Swal.fire({
+        title: 'Cancelado!',
+        text: 'O pedido foi cancelado com sucesso.',
+        icon: 'success',
+        timer: 2000,
+        showConfirmButton: false
+      });
+      
       this.loadOrders();
     } catch (error) {
-      this.notify(`Erro: ${error.message}`, "error");
+      this.notify(`Erro ao cancelar pedido: ${error.message}`, "error");
     }
   },
 
@@ -694,7 +770,37 @@ const app = {
 
   async changeUserProfile(userId, currentProfile) {
     if (!this.can("user_manage")) return;
-    const profile = prompt("Novo perfil (admin, manager, operator, viewer):", currentProfile || "viewer");
+    
+    const profileOptions = {
+      'admin': 'Admin - Acesso total',
+      'manager': 'Manager - Gerenciamento completo',
+      'operator': 'Operator - Operações do dia a dia',
+      'viewer': 'Viewer - Apenas leitura'
+    };
+
+    const { value: profile } = await Swal.fire({
+      title: `Alterar Perfil do Usuário #${userId}`,
+      html: `
+        <div style="text-align: left;">
+          <p style="margin-bottom: 1rem; color: #666;">Perfil atual: <strong>${profileOptions[currentProfile] || currentProfile}</strong></p>
+          <label for="swal-profile" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Novo Perfil:</label>
+          <select id="swal-profile" class="swal2-input" style="width: 100%; padding: 0.75rem;">
+            ${Object.entries(profileOptions).map(([value, label]) => 
+              `<option value="${value}" ${value === currentProfile ? 'selected' : ''}>${label}</option>`
+            ).join('')}
+          </select>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Atualizar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#667eea',
+      preConfirm: () => {
+        return document.getElementById('swal-profile').value;
+      }
+    });
+
     if (!profile) return;
 
     try {
@@ -752,12 +858,22 @@ const app = {
 
   // ==================== NOTIFICAÇÕES ====================
   notify(message, type = "success") {
-    const color = type === "error" ? "#dc2626" : "#2563eb";
-    const el = document.createElement("div");
-    el.textContent = message;
-    el.style.cssText = `position:fixed;right:20px;top:20px;background:${color};color:white;padding:10px 14px;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);`;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+    const Toast = Swal.mixin({
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 3000,
+      timerProgressBar: true,
+      didOpen: (toast) => {
+        toast.addEventListener('mouseenter', Swal.stopTimer)
+        toast.addEventListener('mouseleave', Swal.resumeTimer)
+      }
+    });
+
+    Toast.fire({
+      icon: type === "error" ? 'error' : 'success',
+      title: message
+    });
   },
 };
 
