@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "apps.customers",
     "apps.products",
     "apps.orders",
+    "apps.authentication",
     'corsheaders',
 ]
 
@@ -59,7 +60,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 if os.getenv("DB_ENGINE", "mysql") == "sqlite":
     DATABASES = {
         "default": {
-            "ENGINE": "mysql.connector.django",
+            "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
@@ -96,6 +97,13 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
 
 SPECTACULAR_SETTINGS = {

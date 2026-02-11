@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 
+from apps.common.permissions import ProfilePermission
 from apps.orders.models import Order
 from apps.orders.serializers import (
     OrderCreateSerializer,
@@ -21,6 +22,11 @@ from apps.orders.services.order_service import (
 class OrderListCreateView(generics.ListCreateAPIView):
     queryset = Order.objects.all().order_by("-created_at")
     serializer_class = OrderListSerializer
+    permission_classes = [ProfilePermission]
+    allowed_profiles_by_method = {
+        "GET": ["admin", "manager", "operator", "viewer"],
+        "POST": ["admin", "manager", "operator"],
+    }
 
     def get_serializer_class(self):
         if self.request.method == "POST":
@@ -63,6 +69,11 @@ class OrderListCreateView(generics.ListCreateAPIView):
 class OrderDetailCancelView(generics.RetrieveDestroyAPIView):
     queryset = Order.objects.all()
     serializer_class = OrderDetailSerializer
+    permission_classes = [ProfilePermission]
+    allowed_profiles_by_method = {
+        "GET": ["admin", "manager", "operator", "viewer"],
+        "DELETE": ["admin", "manager"],
+    }
 
     def delete(self, request, *args, **kwargs):
         order = self.get_object()
@@ -83,6 +94,10 @@ class OrderDetailCancelView(generics.RetrieveDestroyAPIView):
 class OrderStatusPatchView(generics.GenericAPIView):
     queryset = Order.objects.all()
     serializer_class = OrderStatusPatchSerializer
+    permission_classes = [ProfilePermission]
+    allowed_profiles_by_method = {
+        "PATCH": ["admin", "manager", "operator"],
+    }
 
     def patch(self, request, *args, **kwargs):
         order = self.get_object()
