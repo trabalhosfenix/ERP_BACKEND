@@ -40,6 +40,8 @@
       </section>
 
       <section id="appPanel" class="hidden">
+        <div class="permission-hint" id="permissionHint"></div>
+
         <div class="tabs">
           <button class="tab-button active" data-tab="produtos" onclick="app.showTab('produtos', event)">📦 Produtos</button>
           <button class="tab-button" data-tab="pedidos" onclick="app.showTab('pedidos', event)">📋 Pedidos</button>
@@ -52,12 +54,8 @@
             <h2>Produtos</h2>
             <button id="btnNewProduct" class="btn btn-primary" onclick="app.saveProduct()">➕ Novo Produto</button>
           </div>
-          <div class="search-bar">
-            <input type="text" id="productSearch" placeholder="Buscar produtos..." />
-            <button class="btn btn-secondary" onclick="app.loadProducts()">Buscar</button>
-          </div>
           <table>
-            <thead><tr><th>ID</th><th>SKU</th><th>Nome</th><th>Preço</th><th>Estoque</th><th>Status</th></tr></thead>
+            <thead><tr><th>ID</th><th>SKU</th><th>Nome</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="productsTableBody"></tbody>
           </table>
         </section>
@@ -68,7 +66,7 @@
             <button id="btnNewOrder" class="btn btn-primary" onclick="app.quickCreateOrder()">➕ Pedido rápido</button>
           </div>
           <table>
-            <thead><tr><th>ID</th><th>Número</th><th>Cliente</th><th>Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>ID</th><th>Número</th><th>Cliente</th><th>Total</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="ordersTableBody"></tbody>
           </table>
         </section>
@@ -79,7 +77,7 @@
             <button id="btnNewCustomer" class="btn btn-primary" onclick="app.saveCustomer()">➕ Novo Cliente</button>
           </div>
           <table>
-            <thead><tr><th>ID</th><th>Nome</th><th>CPF/CNPJ</th><th>Email</th><th>Status</th></tr></thead>
+            <thead><tr><th>ID</th><th>Nome</th><th>CPF/CNPJ</th><th>Email</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="customersTableBody"></tbody>
           </table>
         </section>

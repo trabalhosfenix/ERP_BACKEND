@@ -4,14 +4,49 @@ const app = {
   currentUser: null,
 
   async init() {
-    if (this.authToken) {
-      try {
-        await this.loadCurrentUser();
-        this.showApp();
-      } catch {
-        this.logout(false);
-      }
+    if (!this.authToken) return;
+    try {
+      await this.loadCurrentUser();
+      this.showApp();
+    } catch {
+      this.logout(false);
     }
+  },
+
+  get profiles() {
+    return this.currentUser?.profiles || [];
+  },
+
+  hasAnyProfile(list) {
+    return list.some((item) => this.profiles.includes(item));
+  },
+
+  can(action) {
+    const rules = {
+      view_data: ["admin", "manager", "operator", "viewer"],
+      customer_create: ["admin", "manager"],
+      customer_detail: ["admin", "manager", "operator", "viewer"],
+      product_create: ["admin", "manager"],
+      product_stock_update: ["admin", "manager", "operator"],
+      order_create: ["admin", "manager", "operator"],
+      order_status_update: ["admin", "manager", "operator"],
+      order_cancel: ["admin", "manager"],
+      user_manage: ["admin", "manager"],
+    };
+    return this.hasAnyProfile(rules[action] || []);
+  },
+
+  permissionSummary() {
+    const all = [];
+    if (this.can("view_data")) all.push("Leitura de dados");
+    if (this.can("customer_create")) all.push("Criar cliente");
+    if (this.can("product_create")) all.push("Criar produto");
+    if (this.can("product_stock_update")) all.push("Atualizar estoque");
+    if (this.can("order_create")) all.push("Criar pedido");
+    if (this.can("order_status_update")) all.push("Alterar status do pedido");
+    if (this.can("order_cancel")) all.push("Cancelar pedido");
+    if (this.can("user_manage")) all.push("Gerenciar usuários");
+    return all.join(" • ");
   },
 
   async request(endpoint, options = {}) {
@@ -21,7 +56,7 @@ const app = {
 
     const response = await fetch(url, { ...options, headers, credentials: "include" });
     if (!response.ok) {
-      let detail = "Erro na requisição";
+      let detail = `HTTP ${response.status}`;
       try {
         const data = await response.json();
         detail = data.detail || JSON.stringify(data);
@@ -31,16 +66,6 @@ const app = {
 
     if (response.status === 204) return null;
     return response.json();
-  },
-
-  isAdminOrManager() {
-    const profiles = this.currentUser?.profiles || [];
-    return profiles.includes("admin") || profiles.includes("manager");
-  },
-
-  isOperatorPlus() {
-    const profiles = this.currentUser?.profiles || [];
-    return profiles.includes("admin") || profiles.includes("manager") || profiles.includes("operator");
   },
 
   async login() {
@@ -71,10 +96,7 @@ const app = {
     };
 
     try {
-      await this.request("/auth/register", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      await this.request("/auth/register", { method: "POST", body: JSON.stringify(payload) });
       this.notify("Conta criada com sucesso. Faça login.");
     } catch (error) {
       this.notify(`Falha ao criar conta: ${error.message}`, "error");
@@ -83,14 +105,12 @@ const app = {
 
   async loadCurrentUser() {
     this.currentUser = await this.request("/auth/me");
-    document.getElementById("currentUserLabel").textContent = `${this.currentUser.username} (${this.currentUser.profiles.join(", ")})`;
+    document.getElementById("currentUserLabel").textContent = `${this.currentUser.username} (${this.profiles.join(", ")})`;
   },
 
   async logout(showMessage = true) {
     try {
-      if (this.authToken) {
-        await this.request("/auth/session/logout", { method: "POST" });
-      }
+      if (this.authToken) await this.request("/auth/session/logout", { method: "POST" });
     } catch {}
 
     this.authToken = null;
@@ -99,7 +119,6 @@ const app = {
     document.getElementById("appPanel").classList.add("hidden");
     document.getElementById("authPanel").classList.remove("hidden");
     document.getElementById("userBadge").classList.add("hidden");
-
     if (showMessage) this.notify("Logout realizado.");
   },
 
@@ -108,34 +127,32 @@ const app = {
     document.getElementById("appPanel").classList.remove("hidden");
     document.getElementById("userBadge").classList.remove("hidden");
 
-    const canManage = this.isAdminOrManager();
-    const canOperate = this.isOperatorPlus();
+    document.getElementById("permissionHint").textContent = `Permissões ativas: ${this.permissionSummary() || "nenhuma"}.`;
 
-    document.getElementById("btnNewProduct").classList.toggle("hidden", !canManage);
-    document.getElementById("btnNewCustomer").classList.toggle("hidden", !canManage);
-    document.getElementById("btnNewOrder").classList.toggle("hidden", !canOperate);
+    document.getElementById("btnNewProduct").classList.toggle("hidden", !this.can("product_create"));
+    document.getElementById("btnNewCustomer").classList.toggle("hidden", !this.can("customer_create"));
+    document.getElementById("btnNewOrder").classList.toggle("hidden", !this.can("order_create"));
 
     const usersTabBtn = document.querySelector('[data-tab="usuarios"]');
-    usersTabBtn.classList.toggle("hidden", !canManage);
-    document.getElementById("userCreateBox").classList.toggle("hidden", !canManage);
+    usersTabBtn.classList.toggle("hidden", !this.can("user_manage"));
+    document.getElementById("userCreateBox").classList.toggle("hidden", !this.can("user_manage"));
 
     this.loadProducts();
     this.loadCustomers();
     this.loadOrders();
-    if (canManage) this.loadUsers();
+    if (this.can("user_manage")) this.loadUsers();
   },
 
   showTab(tabName, event) {
     document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
     document.getElementById(tabName).classList.add("active");
-
     document.querySelectorAll(".tab-button").forEach((el) => el.classList.remove("active"));
     if (event?.target) event.target.classList.add("active");
 
     if (tabName === "produtos") this.loadProducts();
     if (tabName === "clientes") this.loadCustomers();
     if (tabName === "pedidos") this.loadOrders();
-    if (tabName === "usuarios" && this.isAdminOrManager()) this.loadUsers();
+    if (tabName === "usuarios" && this.can("user_manage")) this.loadUsers();
   },
 
   async loadProducts() {
@@ -145,7 +162,11 @@ const app = {
       tbody.innerHTML = "";
       data.results.forEach((p) => {
         const row = tbody.insertRow();
-        row.innerHTML = `<td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>R$ ${Number(p.price).toFixed(2)}</td><td>${p.stock_qty}</td><td>${p.is_active ? "Ativo" : "Inativo"}</td>`;
+        const actions = [];
+        if (this.can("product_stock_update")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateStock(${p.id}, ${p.stock_qty || 0})">Estoque</button>`);
+        }
+        row.innerHTML = `<td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>R$ ${Number(p.price).toFixed(2)}</td><td>${p.stock_qty}</td><td>${p.is_active ? "Ativo" : "Inativo"}</td><td>${actions.join("") || "-"}</td>`;
       });
     } catch (error) {
       this.notify(`Erro ao carregar produtos: ${error.message}`, "error");
@@ -153,6 +174,7 @@ const app = {
   },
 
   async saveProduct() {
+    if (!this.can("product_create")) return this.notify("Sem permissão para criar produto.", "error");
     const sku = `SKU-${Date.now()}`;
     try {
       await this.request("/products", {
@@ -173,6 +195,25 @@ const app = {
     }
   },
 
+  async promptUpdateStock(productId, currentQty) {
+    if (!this.can("product_stock_update")) return this.notify("Sem permissão para atualizar estoque.", "error");
+    const input = prompt(`Novo estoque para produto ${productId}:`, String(currentQty));
+    if (input === null) return;
+    const qty = Number(input);
+    if (Number.isNaN(qty)) return this.notify("Quantidade inválida.", "error");
+
+    try {
+      await this.request(`/products/${productId}/stock`, {
+        method: "PATCH",
+        body: JSON.stringify({ stock_qty: qty }),
+      });
+      this.notify("Estoque atualizado com sucesso.");
+      this.loadProducts();
+    } catch (error) {
+      this.notify(`Erro ao atualizar estoque: ${error.message}`, "error");
+    }
+  },
+
   async loadCustomers() {
     try {
       const data = await this.request("/customers?limit=20&offset=0");
@@ -180,14 +221,28 @@ const app = {
       tbody.innerHTML = "";
       data.results.forEach((c) => {
         const row = tbody.insertRow();
-        row.innerHTML = `<td>${c.id}</td><td>${c.name}</td><td>${c.cpf_cnpj}</td><td>${c.email}</td><td>${c.is_active ? "Ativo" : "Inativo"}</td>`;
+        const actions = [];
+        if (this.can("customer_detail")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.viewCustomer(${c.id})">Detalhe</button>`);
+        }
+        row.innerHTML = `<td>${c.id}</td><td>${c.name}</td><td>${c.cpf_cnpj}</td><td>${c.email}</td><td>${c.is_active ? "Ativo" : "Inativo"}</td><td>${actions.join("") || "-"}</td>`;
       });
     } catch (error) {
       this.notify(`Erro ao carregar clientes: ${error.message}`, "error");
     }
   },
 
+  async viewCustomer(customerId) {
+    try {
+      const customer = await this.request(`/customers/${customerId}`);
+      alert(`Cliente #${customer.id}\nNome: ${customer.name}\nCPF/CNPJ: ${customer.cpf_cnpj}\nEmail: ${customer.email}\nTelefone: ${customer.phone || "-"}\nAtivo: ${customer.is_active ? "Sim" : "Não"}`);
+    } catch (error) {
+      this.notify(`Erro ao buscar detalhe do cliente: ${error.message}`, "error");
+    }
+  },
+
   async saveCustomer() {
+    if (!this.can("customer_create")) return this.notify("Sem permissão para criar cliente.", "error");
     try {
       await this.request("/customers", {
         method: "POST",
@@ -214,7 +269,14 @@ const app = {
       tbody.innerHTML = "";
       data.results.forEach((o) => {
         const row = tbody.insertRow();
-        row.innerHTML = `<td>${o.id}</td><td>${o.number}</td><td>${o.customer_id}</td><td>R$ ${Number(o.total).toFixed(2)}</td><td>${o.status}</td>`;
+        const actions = [];
+        if (this.can("order_status_update")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateOrderStatus(${o.id}, '${o.status}')">Status</button>`);
+        }
+        if (this.can("order_cancel")) {
+          actions.push(`<button class="btn btn-small btn-danger" onclick="app.cancelOrder(${o.id})">Cancelar</button>`);
+        }
+        row.innerHTML = `<td>${o.id}</td><td>${o.number}</td><td>${o.customer_id}</td><td>R$ ${Number(o.total).toFixed(2)}</td><td>${o.status}</td><td>${actions.join("") || "-"}</td>`;
       });
     } catch (error) {
       this.notify(`Erro ao carregar pedidos: ${error.message}`, "error");
@@ -222,6 +284,8 @@ const app = {
   },
 
   async quickCreateOrder() {
+    if (!this.can("order_create")) return this.notify("Sem permissão para criar pedido.", "error");
+
     try {
       const customers = await this.request("/customers?limit=1&offset=0");
       const products = await this.request("/products?limit=1&offset=0");
@@ -246,8 +310,44 @@ const app = {
     }
   },
 
+  async promptUpdateOrderStatus(orderId, currentStatus) {
+    if (!this.can("order_status_update")) return this.notify("Sem permissão para alterar status.", "error");
+    const status = prompt(
+      `Novo status para pedido ${orderId} (atual: ${currentStatus}).\nUse: RASCUNHO, AGUARDANDO_PAGAMENTO, PAGO, EM_SEPARACAO, ENVIADO, ENTREGUE, CANCELADO`,
+      currentStatus,
+    );
+    if (!status) return;
+
+    try {
+      await this.request(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, note: "Atualização via frontend" }),
+      });
+      this.notify("Status atualizado com sucesso.");
+      this.loadOrders();
+    } catch (error) {
+      this.notify(`Erro ao atualizar status: ${error.message}`, "error");
+    }
+  },
+
+  async cancelOrder(orderId) {
+    if (!this.can("order_cancel")) return this.notify("Sem permissão para cancelar pedido.", "error");
+    if (!confirm(`Cancelar pedido ${orderId}?`)) return;
+
+    try {
+      await this.request(`/orders/${orderId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ note: "Cancelado via frontend" }),
+      });
+      this.notify("Pedido cancelado com sucesso.");
+      this.loadOrders();
+    } catch (error) {
+      this.notify(`Erro ao cancelar pedido: ${error.message}`, "error");
+    }
+  },
+
   async loadUsers() {
-    if (!this.isAdminOrManager()) return;
+    if (!this.can("user_manage")) return;
 
     try {
       const users = await this.request("/auth/users");
@@ -262,7 +362,10 @@ const app = {
           <td>${u.email || "-"}</td>
           <td>${(u.profiles || []).join(", ")}</td>
           <td class="${u.is_active ? "status-active" : "status-inactive"}">${u.is_active ? "Sim" : "Não"}</td>
-          <td><button class="btn btn-small btn-secondary" onclick="app.toggleUserActive(${u.id}, ${u.is_active})">Ativar/Inativar</button></td>
+          <td>
+            <button class="btn btn-small btn-secondary" onclick="app.toggleUserActive(${u.id}, ${u.is_active})">Ativar/Inativar</button>
+            <button class="btn btn-small btn-primary" onclick="app.changeUserProfile(${u.id}, '${(u.profiles || ["viewer"])[0]}')">Perfil</button>
+          </td>
         `;
       });
     } catch (error) {
@@ -271,7 +374,7 @@ const app = {
   },
 
   async createManagedUser() {
-    if (!this.isAdminOrManager()) return;
+    if (!this.can("user_manage")) return;
 
     const payload = {
       username: document.getElementById("newUserUsername").value.trim(),
@@ -291,7 +394,7 @@ const app = {
   },
 
   async toggleUserActive(userId, currentState) {
-    if (!this.isAdminOrManager()) return;
+    if (!this.can("user_manage")) return;
 
     try {
       await this.request(`/auth/users/${userId}`, {
@@ -302,6 +405,23 @@ const app = {
       this.loadUsers();
     } catch (error) {
       this.notify(`Erro ao atualizar usuário: ${error.message}`, "error");
+    }
+  },
+
+  async changeUserProfile(userId, currentProfile) {
+    if (!this.can("user_manage")) return;
+    const profile = prompt("Novo perfil (admin, manager, operator, viewer):", currentProfile || "viewer");
+    if (!profile) return;
+
+    try {
+      await this.request(`/auth/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ profile }),
+      });
+      this.notify("Perfil atualizado com sucesso.");
+      this.loadUsers();
+    } catch (error) {
+      this.notify(`Erro ao atualizar perfil: ${error.message}`, "error");
     }
   },
 
