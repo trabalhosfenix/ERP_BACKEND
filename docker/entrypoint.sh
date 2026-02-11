@@ -1,7 +1,11 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-echo "Waiting for MySQL at ${DB_HOST}:${DB_PORT}..."
+sanitize_arg() {
+  printf '%s' "$1" | tr -d '\r'
+}
+
+echo "Waiting for MySQL at ${DB_HOST:-db}:${DB_PORT:-3306}..."
 python - <<'PY'
 import os, time, sys
 import MySQLdb
@@ -27,6 +31,15 @@ print("MySQL is ready.")
 PY
 
 echo "Running migrations..."
-python manage.py migrate --noinput
+python manage.py migrate --no-input
 
-exec "$@"
+if [ "$#" -eq 0 ]; then
+  set -- python manage.py runserver 0.0.0.0:8000
+fi
+
+sanitized=()
+for arg in "$@"; do
+  sanitized+=("$(sanitize_arg "$arg")")
+done
+
+exec "${sanitized[@]}"
