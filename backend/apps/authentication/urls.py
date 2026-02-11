@@ -7,6 +7,8 @@ from .views import (
     SessionAuthLoginView,
     SessionLoginView,
     SessionLogoutView,
+    UserDetailManagementView,
+    UserManagementView,
 )
 
 urlpatterns = [
@@ -16,4 +18,6 @@ urlpatterns = [
     path("auth/session/login", SessionAuthLoginView.as_view(), name="auth-session-login"),
     path("auth/session/logout", SessionLogoutView.as_view(), name="auth-session-logout"),
     path("auth/me", MeView.as_view(), name="auth-me"),
+    path("auth/users", UserManagementView.as_view(), name="auth-users"),
+    path("auth/users/<int:user_id>", UserDetailManagementView.as_view(), name="auth-users-detail"),
 ]
