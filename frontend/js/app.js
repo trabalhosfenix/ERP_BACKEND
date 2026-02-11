@@ -1,668 +1,438 @@
 const app = {
-  apiBaseUrl: "http://localhost:8000/api/v1", // Altere para a URL da sua API
-  authToken: null,
-  currentTab: "produtos",
-  pagination: {
-    produtos: { offset: 0, limit: 10, count: 0 },
-    pedidos: { offset: 0, limit: 10, count: 0 },
-    clientes: { offset: 0, limit: 10, count: 0 },
-  },
+  apiBaseUrl: "http://localhost:8000/api/v1",
+  authToken: localStorage.getItem("erp_jwt") || null,
+  currentUser: null,
 
-  init() {
-    this.loadCustomers();
-    this.loadProducts();
-    this.loadOrders();
-    this.setupEventListeners();
-  },
-
-  setupEventListeners() {
-    // Formulários
-    document.getElementById("productForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.saveProduct();
-    });
-
-    document.getElementById("stockForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.updateStock();
-    });
-
-    document.getElementById("customerForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.saveCustomer();
-    });
-
-    document.getElementById("orderForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.createOrder();
-    });
-
-    document.getElementById("statusForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.updateOrderStatus();
-    });
-
-    // Buscas
-    document
-      .getElementById("productSearch")
-      .addEventListener("keypress", (e) => {
-        if (e.key === "Enter") this.loadProducts();
-      });
-
-    document.getElementById("orderSearch").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") this.loadOrders();
-    });
-
-    document
-      .getElementById("customerSearch")
-      .addEventListener("keypress", (e) => {
-        if (e.key === "Enter") this.loadCustomers();
-      });
-  },
-
-  showTab(tabName) {
-    this.currentTab = tabName;
-    document
-      .querySelectorAll(".tab-content")
-      .forEach((el) => el.classList.remove("active"));
-    document.getElementById(tabName).classList.add("active");
-
-    document
-      .querySelectorAll(".tab-button")
-      .forEach((el) => el.classList.remove("active"));
-    event.target.classList.add("active");
-
-    // Recarrega dados da aba
-    switch (tabName) {
-      case "produtos":
-        this.loadProducts();
-        break;
-      case "pedidos":
-        this.loadOrders();
-        break;
-      case "clientes":
-        this.loadCustomers();
-        break;
+  async init() {
+    if (!this.authToken) return;
+    try {
+      await this.loadCurrentUser();
+      this.showApp();
+    } catch {
+      this.logout(false);
     }
   },
 
-  // Autenticação
-  async login() {
-    const username = document.getElementById("username").value;
-    const password = document.getElementById("password").value;
-
-    this.authToken = btoa(`${username}:${password}`);
-    this.init();
-
-    document.querySelector(".auth-section").style.display = "none";
-    this.showNotification("Login realizado com sucesso!", "success");
+  get profiles() {
+    return this.currentUser?.profiles || [];
   },
 
-  // Requisições HTTP
-  async request(endpoint, options = {}) {
-    const base = String(this.apiBaseUrl || "").replace(/\/+$/, "");
+  hasAnyProfile(list) {
+    return list.some((item) => this.profiles.includes(item));
+  },
 
-    let ep = String(endpoint || "");
-    if (!ep.startsWith("/")) ep = "/" + ep;
-
-    // separa path e query
-    const [rawPath, rawQuery = ""] = ep.split("?");
-    // remove trailing slashes do PATH (mantém "/customers/1" ok, remove "/customers/")
-    const path = rawPath.replace(/\/+$/, "");
-    const url = rawQuery ? `${base}${path}?${rawQuery}` : `${base}${path}`;
-
-    console.log("[API]", url); // debug obrigatório agora
-
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
+  can(action) {
+    const rules = {
+      view_data: ["admin", "manager", "operator", "viewer"],
+      customer_create: ["admin", "manager"],
+      customer_detail: ["admin", "manager", "operator", "viewer"],
+      product_create: ["admin", "manager"],
+      product_stock_update: ["admin", "manager", "operator"],
+      order_create: ["admin", "manager", "operator"],
+      order_status_update: ["admin", "manager", "operator"],
+      order_cancel: ["admin", "manager"],
+      user_manage: ["admin", "manager"],
     };
-
-    if (this.authToken) headers["Authorization"] = `Basic ${this.authToken}`;
-
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    if (response.status === 204) return null;
-    return await response.json();
+    return this.hasAnyProfile(rules[action] || []);
   },
 
-  // Produtos
-  async loadProducts() {
-    const search = document.getElementById("productSearch").value;
-    const { limit, offset } = this.pagination.produtos;
+  permissionSummary() {
+    const all = [];
+    if (this.can("view_data")) all.push("Leitura de dados");
+    if (this.can("customer_create")) all.push("Criar cliente");
+    if (this.can("product_create")) all.push("Criar produto");
+    if (this.can("product_stock_update")) all.push("Atualizar estoque");
+    if (this.can("order_create")) all.push("Criar pedido");
+    if (this.can("order_status_update")) all.push("Alterar status do pedido");
+    if (this.can("order_cancel")) all.push("Cancelar pedido");
+    if (this.can("user_manage")) all.push("Gerenciar usuários");
+    return all.join(" • ");
+  },
 
-    let url = `/products/?limit=${limit}&offset=${offset}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
+  async request(endpoint, options = {}) {
+    const url = `${this.apiBaseUrl}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    if (this.authToken) headers.Authorization = `Bearer ${this.authToken}`;
+
+    const response = await fetch(url, { ...options, headers, credentials: "include" });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const data = await response.json();
+        detail = data.detail || JSON.stringify(data);
+      } catch {}
+      throw new Error(detail);
+    }
+
+    if (response.status === 204) return null;
+    return response.json();
+  },
+
+  async login() {
+    const username = document.getElementById("loginUsername").value.trim();
+    const password = document.getElementById("loginPassword").value;
 
     try {
-      const data = await this.request(url);
-      this.pagination.produtos.count = data.count;
-      this.renderProducts(data.results);
-      this.renderPagination(
-        "productsPagination",
-        this.pagination.produtos,
-        "loadProducts",
-      );
+      const data = await this.request("/auth/jwt/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+      this.authToken = data.access;
+      localStorage.setItem("erp_jwt", this.authToken);
+      await this.loadCurrentUser();
+      this.showApp();
+      this.notify("Login realizado com sucesso.");
     } catch (error) {
-      console.error("Erro ao carregar produtos:", error);
+      this.notify(`Falha no login: ${error.message}`, "error");
     }
   },
 
-  renderProducts(products) {
-    const tbody = document.getElementById("productsTableBody");
-    tbody.innerHTML = "";
+  async register() {
+    const payload = {
+      username: document.getElementById("registerUsername").value.trim(),
+      email: document.getElementById("registerEmail").value.trim(),
+      password: document.getElementById("registerPassword").value,
+      profile: document.getElementById("registerProfile").value,
+    };
 
-    products.forEach((product) => {
-      const row = tbody.insertRow();
-      row.innerHTML = `
-                <td>${product.id}</td>
-                <td>${product.sku}</td>
-                <td>${product.name}</td>
-                <td>R$ ${parseFloat(product.price).toFixed(2)}</td>
-                <td>${product.stock_qty || 0}</td>
-                <td><span class="status-badge ${product.is_active ? "status-ATIVO" : "status-INATIVO"}">${product.is_active ? "Ativo" : "Inativo"}</span></td>
-                <td>
-                    <div class="action-buttons">
-                        <button onclick="app.showStockModal(${product.id})" class="btn btn-secondary btn-small">📦 Estoque</button>
-                    </div>
-                </td>
-            `;
-    });
+    try {
+      await this.request("/auth/register", { method: "POST", body: JSON.stringify(payload) });
+      this.notify("Conta criada com sucesso. Faça login.");
+    } catch (error) {
+      this.notify(`Falha ao criar conta: ${error.message}`, "error");
+    }
+  },
+
+  async loadCurrentUser() {
+    this.currentUser = await this.request("/auth/me");
+    document.getElementById("currentUserLabel").textContent = `${this.currentUser.username} (${this.profiles.join(", ")})`;
+  },
+
+  async logout(showMessage = true) {
+    try {
+      if (this.authToken) await this.request("/auth/session/logout", { method: "POST" });
+    } catch {}
+
+    this.authToken = null;
+    this.currentUser = null;
+    localStorage.removeItem("erp_jwt");
+    document.getElementById("appPanel").classList.add("hidden");
+    document.getElementById("authPanel").classList.remove("hidden");
+    document.getElementById("userBadge").classList.add("hidden");
+    if (showMessage) this.notify("Logout realizado.");
+  },
+
+  showApp() {
+    document.getElementById("authPanel").classList.add("hidden");
+    document.getElementById("appPanel").classList.remove("hidden");
+    document.getElementById("userBadge").classList.remove("hidden");
+
+    document.getElementById("permissionHint").textContent = `Permissões ativas: ${this.permissionSummary() || "nenhuma"}.`;
+
+    document.getElementById("btnNewProduct").classList.toggle("hidden", !this.can("product_create"));
+    document.getElementById("btnNewCustomer").classList.toggle("hidden", !this.can("customer_create"));
+    document.getElementById("btnNewOrder").classList.toggle("hidden", !this.can("order_create"));
+
+    const usersTabBtn = document.querySelector('[data-tab="usuarios"]');
+    usersTabBtn.classList.toggle("hidden", !this.can("user_manage"));
+    document.getElementById("userCreateBox").classList.toggle("hidden", !this.can("user_manage"));
+
+    this.loadProducts();
+    this.loadCustomers();
+    this.loadOrders();
+    if (this.can("user_manage")) this.loadUsers();
+  },
+
+  showTab(tabName, event) {
+    document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
+    document.getElementById(tabName).classList.add("active");
+    document.querySelectorAll(".tab-button").forEach((el) => el.classList.remove("active"));
+    if (event?.target) event.target.classList.add("active");
+
+    if (tabName === "produtos") this.loadProducts();
+    if (tabName === "clientes") this.loadCustomers();
+    if (tabName === "pedidos") this.loadOrders();
+    if (tabName === "usuarios" && this.can("user_manage")) this.loadUsers();
+  },
+
+  async loadProducts() {
+    try {
+      const data = await this.request("/products?limit=20&offset=0");
+      const tbody = document.getElementById("productsTableBody");
+      tbody.innerHTML = "";
+      data.results.forEach((p) => {
+        const row = tbody.insertRow();
+        const actions = [];
+        if (this.can("product_stock_update")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateStock(${p.id}, ${p.stock_qty || 0})">Estoque</button>`);
+        }
+        row.innerHTML = `<td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>R$ ${Number(p.price).toFixed(2)}</td><td>${p.stock_qty}</td><td>${p.is_active ? "Ativo" : "Inativo"}</td><td>${actions.join("") || "-"}</td>`;
+      });
+    } catch (error) {
+      this.notify(`Erro ao carregar produtos: ${error.message}`, "error");
+    }
   },
 
   async saveProduct() {
-    const productData = {
-      sku: document.getElementById("productSku").value,
-      name: document.getElementById("productName").value,
-      description: document.getElementById("productDescription").value,
-      price: document.getElementById("productPrice").value,
-      stock_qty: parseInt(document.getElementById("productStock").value),
-      is_active: document.getElementById("productActive").checked,
-    };
-
-    const productId = document.getElementById("productId").value;
-
+    if (!this.can("product_create")) return this.notify("Sem permissão para criar produto.", "error");
+    const sku = `SKU-${Date.now()}`;
     try {
-      if (productId) {
-        await this.request(`/products/${productId}/`, {
-          method: "PUT",
-          body: JSON.stringify(productData),
-        });
-        this.showNotification("Produto atualizado com sucesso!", "success");
-      } else {
-        await this.request("/products/", {
-          method: "POST",
-          body: JSON.stringify(productData),
-        });
-        this.showNotification("Produto criado com sucesso!", "success");
-      }
-
-      this.closeProductModal();
-      this.loadProducts();
-    } catch (error) {
-      console.error("Erro ao salvar produto:", error);
-      this.showNotification("Erro ao salvar produto!", "error");
-    }
-  },
-
-  showProductModal(productId = null) {
-    document.getElementById("productModalTitle").textContent = productId
-      ? "Editar Produto"
-      : "Novo Produto";
-    document.getElementById("productId").value = productId || "";
-
-    if (productId) {
-      this.loadProductDetails(productId);
-    } else {
-      document.getElementById("productForm").reset();
-    }
-
-    document.getElementById("productModal").style.display = "block";
-  },
-
-  closeProductModal() {
-    document.getElementById("productModal").style.display = "none";
-    document.getElementById("productForm").reset();
-  },
-
-  showStockModal(productId) {
-    document.getElementById("stockProductId").value = productId;
-    document.getElementById("stockQty").value = "";
-    document.getElementById("stockModal").style.display = "block";
-  },
-
-  closeStockModal() {
-    document.getElementById("stockModal").style.display = "none";
-  },
-
-  async updateStock() {
-    const productId = document.getElementById("stockProductId").value;
-    const stockQty = parseInt(document.getElementById("stockQty").value);
-
-    try {
-      await this.request(`/products/${productId}/stock/`, {
-        method: "PATCH",
-        body: JSON.stringify({ stock_qty: stockQty }),
+      await this.request("/products", {
+        method: "POST",
+        body: JSON.stringify({
+          sku,
+          name: `Produto ${new Date().toLocaleTimeString()}`,
+          description: "Produto criado pela tela",
+          price: "10.00",
+          stock_qty: 20,
+          is_active: true,
+        }),
       });
-
-      this.showNotification("Estoque atualizado com sucesso!", "success");
-      this.closeStockModal();
+      this.notify("Produto criado com sucesso.");
       this.loadProducts();
     } catch (error) {
-      console.error("Erro ao atualizar estoque:", error);
-      this.showNotification("Erro ao atualizar estoque!", "error");
+      this.notify(`Erro ao criar produto: ${error.message}`, "error");
     }
   },
 
-  // Clientes
-  async loadCustomers() {
-    const search = document.getElementById("customerSearch").value;
-    const { limit, offset } = this.pagination.clientes;
-
-    let url = `/customers/?limit=${limit}&offset=${offset}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
+  async promptUpdateStock(productId, currentQty) {
+    if (!this.can("product_stock_update")) return this.notify("Sem permissão para atualizar estoque.", "error");
+    const input = prompt(`Novo estoque para produto ${productId}:`, String(currentQty));
+    if (input === null) return;
+    const qty = Number(input);
+    if (Number.isNaN(qty)) return this.notify("Quantidade inválida.", "error");
 
     try {
-      const data = await this.request(url);
-      this.pagination.clientes.count = data.count;
-      this.renderCustomers(data.results);
-      this.renderPagination(
-        "customersPagination",
-        this.pagination.clientes,
-        "loadCustomers",
-      );
-
-      // Atualiza select de clientes nos pedidos
-      this.loadCustomerSelect();
+      await this.request(`/products/${productId}/stock`, {
+        method: "PATCH",
+        body: JSON.stringify({ stock_qty: qty }),
+      });
+      this.notify("Estoque atualizado com sucesso.");
+      this.loadProducts();
     } catch (error) {
-      console.error("Erro ao carregar clientes:", error);
+      this.notify(`Erro ao atualizar estoque: ${error.message}`, "error");
     }
   },
 
-  renderCustomers(customers) {
-    const tbody = document.getElementById("customersTableBody");
-    tbody.innerHTML = "";
+  async loadCustomers() {
+    try {
+      const data = await this.request("/customers?limit=20&offset=0");
+      const tbody = document.getElementById("customersTableBody");
+      tbody.innerHTML = "";
+      data.results.forEach((c) => {
+        const row = tbody.insertRow();
+        const actions = [];
+        if (this.can("customer_detail")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.viewCustomer(${c.id})">Detalhe</button>`);
+        }
+        row.innerHTML = `<td>${c.id}</td><td>${c.name}</td><td>${c.cpf_cnpj}</td><td>${c.email}</td><td>${c.is_active ? "Ativo" : "Inativo"}</td><td>${actions.join("") || "-"}</td>`;
+      });
+    } catch (error) {
+      this.notify(`Erro ao carregar clientes: ${error.message}`, "error");
+    }
+  },
 
-    customers.forEach((customer) => {
-      const row = tbody.insertRow();
-      row.innerHTML = `
-                <td>${customer.id}</td>
-                <td>${customer.name}</td>
-                <td>${customer.cpf_cnpj}</td>
-                <td>${customer.email}</td>
-                <td>${customer.phone || "-"}</td>
-                <td><span class="status-badge ${customer.is_active ? "status-ATIVO" : "status-INATIVO"}">${customer.is_active ? "Ativo" : "Inativo"}</span></td>
-                <td>
-                    <div class="action-buttons">
-                        <button onclick="app.showCustomerModal(${customer.id})" class="btn btn-primary btn-small">✏️ Editar</button>
-                    </div>
-                </td>
-            `;
-    });
+  async viewCustomer(customerId) {
+    try {
+      const customer = await this.request(`/customers/${customerId}`);
+      alert(`Cliente #${customer.id}\nNome: ${customer.name}\nCPF/CNPJ: ${customer.cpf_cnpj}\nEmail: ${customer.email}\nTelefone: ${customer.phone || "-"}\nAtivo: ${customer.is_active ? "Sim" : "Não"}`);
+    } catch (error) {
+      this.notify(`Erro ao buscar detalhe do cliente: ${error.message}`, "error");
+    }
   },
 
   async saveCustomer() {
-    const customerData = {
-      name: document.getElementById("customerName").value,
-      cpf_cnpj: document.getElementById("customerCpfCnpj").value,
-      email: document.getElementById("customerEmail").value,
-      phone: document.getElementById("customerPhone").value,
-      address: document.getElementById("customerAddress").value,
-      is_active: document.getElementById("customerActive").checked,
-    };
-
+    if (!this.can("customer_create")) return this.notify("Sem permissão para criar cliente.", "error");
     try {
-      await this.request("/customers/", {
+      await this.request("/customers", {
         method: "POST",
-        body: JSON.stringify(customerData),
+        body: JSON.stringify({
+          name: `Cliente ${Date.now()}`,
+          cpf_cnpj: `${Math.floor(Math.random() * 10 ** 11)}`,
+          email: `cliente${Date.now()}@mail.com`,
+          phone: "11999999999",
+          address: "Rua Exemplo",
+          is_active: true,
+        }),
       });
-
-      this.showNotification("Cliente criado com sucesso!", "success");
-      this.closeCustomerModal();
+      this.notify("Cliente criado com sucesso.");
       this.loadCustomers();
     } catch (error) {
-      console.error("Erro ao salvar cliente:", error);
-      this.showNotification("Erro ao salvar cliente!", "error");
+      this.notify(`Erro ao criar cliente: ${error.message}`, "error");
     }
   },
 
-  showCustomerModal(customerId = null) {
-    if (customerId) {
-      this.loadCustomerDetails(customerId);
-    } else {
-      document.getElementById("customerForm").reset();
-      document.getElementById("customerActive").checked = true;
-    }
-
-    document.getElementById("customerModal").style.display = "block";
-  },
-
-  closeCustomerModal() {
-    document.getElementById("customerModal").style.display = "none";
-    document.getElementById("customerForm").reset();
-  },
-
-  async loadCustomerSelect() {
-    try {
-      const data = await this.request("/customers/?limit=100");
-      const selects = document.querySelectorAll(
-        ".product-select, #orderCustomer",
-      );
-
-      selects.forEach((select) => {
-        if (select.id === "orderCustomer") {
-          select.innerHTML = '<option value="">Selecione um cliente</option>';
-        }
-
-        data.results.forEach((customer) => {
-          if (customer.is_active) {
-            const option = document.createElement("option");
-            option.value = customer.id;
-            option.textContent = `${customer.name} - ${customer.cpf_cnpj}`;
-            select.appendChild(option);
-          }
-        });
-      });
-    } catch (error) {
-      console.error("Erro ao carregar clientes para select:", error);
-    }
-  },
-
-  // Pedidos
   async loadOrders() {
-    const search = document.getElementById("orderSearch").value;
-    const { limit, offset } = this.pagination.pedidos;
-
-    let url = `/orders/?limit=${limit}&offset=${offset}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
-
     try {
-      const data = await this.request(url);
-      this.pagination.pedidos.count = data.count;
-      this.renderOrders(data.results);
-      this.renderPagination(
-        "ordersPagination",
-        this.pagination.pedidos,
-        "loadOrders",
-      );
-    } catch (error) {
-      console.error("Erro ao carregar pedidos:", error);
-    }
-  },
-
-  async renderOrders(orders) {
-    const tbody = document.getElementById("ordersTableBody");
-    tbody.innerHTML = "";
-
-    for (const order of orders) {
-      // Carrega dados do cliente
-      let customerName = "Cliente não encontrado";
-      try {
-        const customer = await this.request(`/customers/${order.customer_id}/`);
-        customerName = customer.name;
-      } catch (error) {
-        console.error("Erro ao carregar cliente:", error);
-      }
-
-      const row = tbody.insertRow();
-      row.innerHTML = `
-                <td>${order.id}</td>
-                <td>${order.number}</td>
-                <td>${customerName}</td>
-                <td>${new Date(order.created_at).toLocaleDateString("pt-BR")}</td>
-                <td>R$ ${parseFloat(order.total).toFixed(2)}</td>
-                <td><span class="status-badge status-${order.status}">${order.status}</span></td>
-                <td>
-                    <div class="action-buttons">
-                        <button onclick="app.showStatusModal(${order.id})" class="btn btn-secondary btn-small">🔄 Status</button>
-                        <button onclick="app.deleteOrder(${order.id})" class="btn btn-danger btn-small">🗑️</button>
-                    </div>
-                </td>
-            `;
-    }
-  },
-
-  showOrderModal() {
-    this.loadCustomerSelect();
-    this.loadProductSelect();
-    document.getElementById("orderModal").style.display = "block";
-  },
-
-  closeOrderModal() {
-    document.getElementById("orderModal").style.display = "none";
-    document.getElementById("orderForm").reset();
-    document.getElementById("orderItems").innerHTML = `
-            <div class="order-item">
-                <select class="product-select" required>
-                    <option value="">Selecione um produto</option>
-                </select>
-                <input type="number" class="item-qty" min="1" placeholder="Quantidade" required>
-                <button type="button" onclick="app.removeOrderItem(this)" class="btn btn-danger btn-small">Remover</button>
-            </div>
-        `;
-  },
-
-  async loadProductSelect() {
-    try {
-      const data = await this.request("/products/?limit=100");
-      const selects = document.querySelectorAll(".product-select");
-
-      selects.forEach((select) => {
-        select.innerHTML = '<option value="">Selecione um produto</option>';
-        data.results.forEach((product) => {
-          if (product.is_active && product.stock_qty > 0) {
-            const option = document.createElement("option");
-            option.value = product.id;
-            option.textContent = `${product.name} - SKU: ${product.sku} - Estoque: ${product.stock_qty}`;
-            select.appendChild(option);
-          }
-        });
+      const data = await this.request("/orders?limit=20&offset=0");
+      const tbody = document.getElementById("ordersTableBody");
+      tbody.innerHTML = "";
+      data.results.forEach((o) => {
+        const row = tbody.insertRow();
+        const actions = [];
+        if (this.can("order_status_update")) {
+          actions.push(`<button class="btn btn-small btn-secondary" onclick="app.promptUpdateOrderStatus(${o.id}, '${o.status}')">Status</button>`);
+        }
+        if (this.can("order_cancel")) {
+          actions.push(`<button class="btn btn-small btn-danger" onclick="app.cancelOrder(${o.id})">Cancelar</button>`);
+        }
+        row.innerHTML = `<td>${o.id}</td><td>${o.number}</td><td>${o.customer_id}</td><td>R$ ${Number(o.total).toFixed(2)}</td><td>${o.status}</td><td>${actions.join("") || "-"}</td>`;
       });
     } catch (error) {
-      console.error("Erro ao carregar produtos para select:", error);
+      this.notify(`Erro ao carregar pedidos: ${error.message}`, "error");
     }
   },
 
-  addOrderItem() {
-    const itemsDiv = document.getElementById("orderItems");
-    const newItem = document.createElement("div");
-    newItem.className = "order-item";
-    newItem.innerHTML = `
-            <select class="product-select" required>
-                <option value="">Selecione um produto</option>
-            </select>
-            <input type="number" class="item-qty" min="1" placeholder="Quantidade" required>
-            <button type="button" onclick="app.removeOrderItem(this)" class="btn btn-danger btn-small">Remover</button>
-        `;
-    itemsDiv.appendChild(newItem);
-    this.loadProductSelect();
-  },
+  async quickCreateOrder() {
+    if (!this.can("order_create")) return this.notify("Sem permissão para criar pedido.", "error");
 
-  removeOrderItem(button) {
-    const itemsDiv = document.getElementById("orderItems");
-    if (itemsDiv.children.length > 1) {
-      button.parentElement.remove();
-    } else {
-      this.showNotification("O pedido deve ter pelo menos um item!", "warning");
-    }
-  },
-
-  async createOrder() {
-    const customerId = document.getElementById("orderCustomer").value;
-    const observations = document.getElementById("orderObservations").value;
-    const idempotencyKey = `order_${Date.now()}`;
-
-    const items = [];
-    const orderItems = document.querySelectorAll(".order-item");
-
-    for (const item of orderItems) {
-      const productSelect = item.querySelector(".product-select");
-      const qtyInput = item.querySelector(".item-qty");
-
-      if (productSelect.value && qtyInput.value) {
-        items.push({
-          product_id: parseInt(productSelect.value),
-          qty: parseInt(qtyInput.value),
-        });
+    try {
+      const customers = await this.request("/customers?limit=1&offset=0");
+      const products = await this.request("/products?limit=1&offset=0");
+      if (!customers.results.length || !products.results.length) {
+        this.notify("Crie pelo menos 1 cliente e 1 produto para gerar pedido.", "error");
+        return;
       }
-    }
 
-    if (items.length === 0) {
-      this.showNotification(
-        "Adicione pelo menos um item ao pedido!",
-        "warning",
-      );
-      return;
+      await this.request("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          customer_id: customers.results[0].id,
+          idempotency_key: `quick_${Date.now()}`,
+          observations: "Pedido rápido pela UI",
+          items: [{ product_id: products.results[0].id, qty: 1 }],
+        }),
+      });
+      this.notify("Pedido criado com sucesso.");
+      this.loadOrders();
+    } catch (error) {
+      this.notify(`Erro ao criar pedido: ${error.message}`, "error");
     }
+  },
 
-    const orderData = {
-      customer_id: parseInt(customerId),
-      idempotency_key: idempotencyKey,
-      observations: observations,
-      items: items,
+  async promptUpdateOrderStatus(orderId, currentStatus) {
+    if (!this.can("order_status_update")) return this.notify("Sem permissão para alterar status.", "error");
+    const status = prompt(
+      `Novo status para pedido ${orderId} (atual: ${currentStatus}).\nUse: RASCUNHO, AGUARDANDO_PAGAMENTO, PAGO, EM_SEPARACAO, ENVIADO, ENTREGUE, CANCELADO`,
+      currentStatus,
+    );
+    if (!status) return;
+
+    try {
+      await this.request(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, note: "Atualização via frontend" }),
+      });
+      this.notify("Status atualizado com sucesso.");
+      this.loadOrders();
+    } catch (error) {
+      this.notify(`Erro ao atualizar status: ${error.message}`, "error");
+    }
+  },
+
+  async cancelOrder(orderId) {
+    if (!this.can("order_cancel")) return this.notify("Sem permissão para cancelar pedido.", "error");
+    if (!confirm(`Cancelar pedido ${orderId}?`)) return;
+
+    try {
+      await this.request(`/orders/${orderId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ note: "Cancelado via frontend" }),
+      });
+      this.notify("Pedido cancelado com sucesso.");
+      this.loadOrders();
+    } catch (error) {
+      this.notify(`Erro ao cancelar pedido: ${error.message}`, "error");
+    }
+  },
+
+  async loadUsers() {
+    if (!this.can("user_manage")) return;
+
+    try {
+      const users = await this.request("/auth/users");
+      const tbody = document.getElementById("usersTableBody");
+      tbody.innerHTML = "";
+
+      users.forEach((u) => {
+        const row = tbody.insertRow();
+        row.innerHTML = `
+          <td>${u.id}</td>
+          <td>${u.username}</td>
+          <td>${u.email || "-"}</td>
+          <td>${(u.profiles || []).join(", ")}</td>
+          <td class="${u.is_active ? "status-active" : "status-inactive"}">${u.is_active ? "Sim" : "Não"}</td>
+          <td>
+            <button class="btn btn-small btn-secondary" onclick="app.toggleUserActive(${u.id}, ${u.is_active})">Ativar/Inativar</button>
+            <button class="btn btn-small btn-primary" onclick="app.changeUserProfile(${u.id}, '${(u.profiles || ["viewer"])[0]}')">Perfil</button>
+          </td>
+        `;
+      });
+    } catch (error) {
+      this.notify(`Erro ao carregar usuários: ${error.message}`, "error");
+    }
+  },
+
+  async createManagedUser() {
+    if (!this.can("user_manage")) return;
+
+    const payload = {
+      username: document.getElementById("newUserUsername").value.trim(),
+      email: document.getElementById("newUserEmail").value.trim(),
+      password: document.getElementById("newUserPassword").value,
+      profile: document.getElementById("newUserProfile").value,
+      is_active: true,
     };
 
     try {
-      await this.request("/orders/", {
-        method: "POST",
-        body: JSON.stringify(orderData),
-      });
-
-      this.showNotification("Pedido criado com sucesso!", "success");
-      this.closeOrderModal();
-      this.loadOrders();
+      await this.request("/auth/users", { method: "POST", body: JSON.stringify(payload) });
+      this.notify("Usuário criado com sucesso.");
+      this.loadUsers();
     } catch (error) {
-      console.error("Erro ao criar pedido:", error);
-      this.showNotification("Erro ao criar pedido!", "error");
+      this.notify(`Erro ao criar usuário: ${error.message}`, "error");
     }
   },
 
-  showStatusModal(orderId) {
-    document.getElementById("statusOrderId").value = orderId;
-    document.getElementById("orderStatus").value = "";
-    document.getElementById("statusNote").value = "";
-    document.getElementById("statusModal").style.display = "block";
-  },
-
-  closeStatusModal() {
-    document.getElementById("statusModal").style.display = "none";
-    document.getElementById("statusForm").reset();
-  },
-
-  async updateOrderStatus() {
-    const orderId = document.getElementById("statusOrderId").value;
-    const status = document.getElementById("orderStatus").value;
-    const note = document.getElementById("statusNote").value;
+  async toggleUserActive(userId, currentState) {
+    if (!this.can("user_manage")) return;
 
     try {
-      await this.request(`/orders/${orderId}/status/`, {
+      await this.request(`/auth/users/${userId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status, note }),
+        body: JSON.stringify({ is_active: !currentState }),
       });
-
-      this.showNotification("Status do pedido atualizado!", "success");
-      this.closeStatusModal();
-      this.loadOrders();
+      this.notify("Usuário atualizado com sucesso.");
+      this.loadUsers();
     } catch (error) {
-      console.error("Erro ao atualizar status:", error);
-      this.showNotification("Erro ao atualizar status!", "error");
+      this.notify(`Erro ao atualizar usuário: ${error.message}`, "error");
     }
   },
 
-  async deleteOrder(orderId) {
-    if (confirm("Tem certeza que deseja excluir este pedido?")) {
-      try {
-        await this.request(`/orders/${orderId}/`, {
-          method: "DELETE",
-        });
+  async changeUserProfile(userId, currentProfile) {
+    if (!this.can("user_manage")) return;
+    const profile = prompt("Novo perfil (admin, manager, operator, viewer):", currentProfile || "viewer");
+    if (!profile) return;
 
-        this.showNotification("Pedido excluído com sucesso!", "success");
-        this.loadOrders();
-      } catch (error) {
-        console.error("Erro ao excluir pedido:", error);
-        this.showNotification("Erro ao excluir pedido!", "error");
-      }
+    try {
+      await this.request(`/auth/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ profile }),
+      });
+      this.notify("Perfil atualizado com sucesso.");
+      this.loadUsers();
+    } catch (error) {
+      this.notify(`Erro ao atualizar perfil: ${error.message}`, "error");
     }
   },
 
-  // Utilidades
-  renderPagination(containerId, paginationData, loadFunction) {
-    const container = document.getElementById(containerId);
-    const totalPages = Math.ceil(paginationData.count / paginationData.limit);
-    const currentPage =
-      Math.floor(paginationData.offset / paginationData.limit) + 1;
-
-    container.innerHTML = "";
-
-    if (totalPages <= 1) return;
-
-    // Botão Anterior
-    if (currentPage > 1) {
-      const prevButton = document.createElement("button");
-      prevButton.textContent = "Anterior";
-      prevButton.onclick = () => {
-        paginationData.offset -= paginationData.limit;
-        this[loadFunction]();
-      };
-      container.appendChild(prevButton);
-    }
-
-    // Números das páginas
-    let startPage = Math.max(1, currentPage - 2);
-    let endPage = Math.min(totalPages, startPage + 4);
-
-    for (let i = startPage; i <= endPage; i++) {
-      const pageButton = document.createElement("button");
-      pageButton.textContent = i;
-      if (i === currentPage) {
-        pageButton.classList.add("active");
-      }
-      pageButton.onclick = () => {
-        paginationData.offset = (i - 1) * paginationData.limit;
-        this[loadFunction]();
-      };
-      container.appendChild(pageButton);
-    }
-
-    // Botão Próximo
-    if (currentPage < totalPages) {
-      const nextButton = document.createElement("button");
-      nextButton.textContent = "Próximo";
-      nextButton.onclick = () => {
-        paginationData.offset += paginationData.limit;
-        this[loadFunction]();
-      };
-      container.appendChild(nextButton);
-    }
-  },
-
-  showNotification(message, type = "info") {
-    const notification = document.createElement("div");
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            background-color: ${type === "success" ? "#27ae60" : type === "error" ? "#e74c3c" : "#3498db"};
-            color: white;
-            border-radius: 4px;
-            z-index: 9999;
-            animation: slideIn 0.3s ease;
-        `;
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-      notification.style.animation = "slideOut 0.3s ease";
-      setTimeout(() => notification.remove(), 300);
-    }, 3000);
+  notify(message, type = "success") {
+    const color = type === "error" ? "#dc2626" : "#2563eb";
+    const el = document.createElement("div");
+    el.textContent = message;
+    el.style.cssText = `position:fixed;right:20px;top:20px;background:${color};color:white;padding:10px 14px;border-radius:8px;z-index:9999;`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2600);
   },
 };
 
-// Inicialização
 document.addEventListener("DOMContentLoaded", () => app.init());
