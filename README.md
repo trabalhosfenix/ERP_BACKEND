@@ -195,6 +195,28 @@ URLs:
 
 `docker compose exec backend pytest`
 
+### **Executando o Servidor Localmente (sem Docker)**
+**Importante:** Use apenas para desenvolvimento e testes.
+
+`export DJANGO_DEBUG=1`
+`export DB_ENGINE=sqlite`
+`python manage.py runserver`
+
+### 
+`DJANGO_DEBUG=1 DB_ENGINE=sqlite python manage.py runserver`
+
+### **Populando o Banco de Dados (Seed)**
+**Importante:** Use apenas para desenvolvimento e testes.
+
+`python manage.py seed`
+`DJANGO_DEBUG=1 DB_ENGINE=sqlite python manage.py seed`
+
+### **Executando Testes Localmente**
+`DB_ENGINE=sqlite pytest -vv`
+
+
+## **Acessando a Home Page** (Easter Egg)
+http://127.0.0.1:8000/templates/home
 ---
 
 ## **Integração Contínua (CI)**
