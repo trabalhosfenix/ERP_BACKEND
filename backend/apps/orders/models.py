@@ -21,9 +21,9 @@ class Order(SoftDeleteModel):
     class Meta:
         db_table = "orders"
         constraints = [
-            models.UniqueConstraint(fields=["customer", "idempotency_key"], name="uq_order_customer_idempotency"),
+            models.UniqueConstraint(fields=["customer", "idempotency_key"], name="uq_order_customer_idempotency"), # garante que o mesmo cliente não crie múltiplas ordens com a mesma chave de idempotência
         ]
-        indexes = [models.Index(fields=["customer", "created_at"]), models.Index(fields=["status"])]
+        indexes = [models.Index(fields=["customer", "created_at"]), models.Index(fields=["status"])] # índices para consultas frequentes por cliente, data de criação e status
 
 
 class OrderItem(models.Model):

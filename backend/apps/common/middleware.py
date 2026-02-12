@@ -16,9 +16,9 @@ class RateLimitMiddleware:
                 client = get_redis()
                 count = client.incr(key)
                 if count == 1:
-                    client.expire(key, 60)
+                    client.expire(key, 60) # expire after 60 seconds
                 if count > settings.RATE_LIMIT_PER_MINUTE:
-                    return JsonResponse({"detail": "rate limit exceeded"}, status=429)
+                    return JsonResponse({"detail": "rate limit exceeded"}, status=429) # 429 Too Many Requests
             except Exception:
                 pass
         return self.get_response(request)
