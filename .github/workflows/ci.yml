@@ -30,25 +30,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+        
       - name: Prepare env file for docker compose
         run: |
-          if [ -f .env.example ]; then
-            cp .env.example .env
-          else
-            cat > .env << 'EOF'
-            SECRET_KEY=ci-not-secret
-            DEBUG=False
-            DB_NAME=erp
-            DB_USER=root
-            DB_PASSWORD=root
-            DB_HOST=db
-            DB_PORT=3306
-            REDIS_HOST=redis
-            REDIS_PORT=6379
-            RATE_LIMIT_PER_MINUTE=120
-            EOF
-          fi
+          test -f .env.example || (echo ".env.example not found at repo root" && ls -la && exit 1)
+          cp .env.example .env
+          echo "Prepared .env from .env.example"
+          echo "Files:"
+          ls -la .env .env.example
+ 
+
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
