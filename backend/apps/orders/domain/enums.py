@@ -1,9 +1,0 @@
-from django.db import models
-
-class OrderStatus(models.TextChoices):
-    PENDENTE = 'PENDENTE', 'PENDENTE'
-    CONFIRMADO = 'CONFIRMADO', 'CONFIRMADO'
-    SEPARADO = 'SEPARADO', 'SEPARADO'
-    ENVIADO = 'ENVIADO', 'ENVIADO'
-    ENTREGUE = 'ENTREGUE', 'ENTREGUE'
-    CANCELADO = 'CANCELADO', 'CANCELADO'
