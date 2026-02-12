@@ -20,7 +20,7 @@ from apps.orders.services.order_service import (
 
 
 class OrderListCreateView(generics.ListCreateAPIView):
-    queryset = Order.objects.all().order_by("-created_at")
+    queryset = Order.objects.select_related("customer").all().order_by("-created_at")
     serializer_class = OrderListSerializer
     permission_classes = [ProfilePermission]
     allowed_profiles_by_method = {
@@ -67,7 +67,9 @@ class OrderListCreateView(generics.ListCreateAPIView):
 
 
 class OrderDetailCancelView(generics.RetrieveDestroyAPIView):
-    queryset = Order.objects.all()
+    queryset = Order.objects.select_related("customer").prefetch_related(
+        "items__product", "status_history__changed_by"
+    ).all()
     serializer_class = OrderDetailSerializer
     permission_classes = [ProfilePermission]
     allowed_profiles_by_method = {
@@ -92,7 +94,9 @@ class OrderDetailCancelView(generics.RetrieveDestroyAPIView):
 
 
 class OrderStatusPatchView(generics.GenericAPIView):
-    queryset = Order.objects.all()
+    queryset = Order.objects.select_related("customer").prefetch_related(
+        "items__product", "status_history__changed_by"
+    ).all()
     serializer_class = OrderStatusPatchSerializer
     permission_classes = [ProfilePermission]
     allowed_profiles_by_method = {

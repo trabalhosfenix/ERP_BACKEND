@@ -11,11 +11,58 @@ from apps.orders.models import Order
 from apps.products.models import Product
 
 
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _debug_response(resp, label="response"):
+    # Cabeçalho básico
+    logger.error("=== %s ===", label)
+    logger.error("status=%s", getattr(resp, "status_code", None))
+    logger.error("content-type=%s", resp.get("Content-Type", None) if hasattr(resp, "get") else None)
+
+    # .data (DRF Response) se existir
+    if hasattr(resp, "data"):
+        try:
+            logger.error("data=%s", resp.data)
+        except Exception as e:
+            logger.error("data=<error: %s>", e)
+
+    # JSON parseado
+    try:
+        payload = resp.json()
+        logger.error("json(type=%s)=%s", type(payload).__name__, payload)
+    except Exception as e:
+        logger.error("json=<error: %s>", e)
+
+    # Conteúdo cru (bytes -> texto)
+    try:
+        raw = resp.content.decode("utf-8", errors="replace")
+        logger.error("raw=%s", raw)
+    except Exception as e:
+        logger.error("raw=<error: %s>", e)
+
+
 @pytest.fixture
 def operator_user(db):
     group, _ = Group.objects.get_or_create(name="operator")
     user = User.objects.create_user(username="operator_orders", password="123456")
     user.groups.add(group)
+    return user
+
+
+@pytest.fixture
+def viewer_user(db):
+    group, _ = Group.objects.get_or_create(name="viewer")
+    user = User.objects.create_user(username="viewer_orders", password="123456")
+    user.groups.add(group)
+    return user
+
+
+@pytest.fixture
+def admin_user(db):
+    user = User.objects.create_superuser(username="admin_orders", password="123456", email="admin@test.com")
     return user
 
 
@@ -136,3 +183,93 @@ def test_patch_order_status_route_with_id_param_alias(operator_user):
     body = status_response.json()
     assert body["status"] == "CONFIRMADO"
     assert body["id"] == order_id
+
+
+@pytest.mark.django_db
+def test_order_list_and_detail_fields(operator_user):
+    customer = Customer.objects.create(name="Customer Test", cpf_cnpj="999", email="test@test.com")
+    product = Product.objects.create(sku="PROD1", name="Product Test", price="50.00", stock_qty=10)
+
+    client = _authenticated_client(operator_user)
+
+    # Criar pedido (valida criação)
+    create_response = client.post(
+        "/api/v1/orders",
+        {
+            "customer_id": customer.id,
+            "idempotency_key": "list-detail-test",
+            "items": [{"product_id": product.id, "qty": 1}],
+        },
+        format="json",
+    )
+    assert create_response.status_code in (200, 201)
+
+    # Testar Listagem (paginada)
+    list_response = client.get("/api/v1/orders")
+    assert list_response.status_code == 200
+
+    payload = list_response.json()
+    assert isinstance(payload, dict)
+    assert "results" in payload
+
+    orders = payload["results"]
+    assert isinstance(orders, list)
+    assert len(orders) >= 1
+
+    order_list_item = orders[0]
+    assert "customer_name" in order_list_item
+    assert order_list_item["customer_name"] == "Customer Test"
+
+    # Verificar que campos pesados não estão na lista
+    assert "items" not in order_list_item
+    assert "status_history" not in order_list_item
+
+    # Testar Detalhe
+    order_id = order_list_item["id"]
+    detail_response = client.get(f"/api/v1/orders/{order_id}")
+    assert detail_response.status_code == 200
+
+    order_detail = detail_response.json()
+    assert "items" in order_detail
+    assert "status_history" in order_detail
+    assert order_detail["customer_name"] == "Customer Test"
+    assert order_detail["items"][0]["product_name"] == "Product Test"
+
+
+@pytest.mark.django_db
+def test_order_cancelation_permissions(operator_user, admin_user):
+    customer = Customer.objects.create(name="Cancel Test", cpf_cnpj="888", email="cancel@test.com")
+    product = Product.objects.create(sku="PROD2", name="P2", price="10.00", stock_qty=10)
+    
+    # Criar pedido com operador
+    client_op = _authenticated_client(operator_user)
+    res = client_op.post("/api/v1/orders", {
+        "customer_id": customer.id,
+        "idempotency_key": "cancel-perm-test",
+        "items": [{"product_id": product.id, "qty": 1}],
+    }, format="json")
+    order_id = res.json()["id"]
+
+    # Operador não pode cancelar (DELETE)
+    cancel_op = client_op.delete(f"/api/v1/orders/{order_id}")
+    assert cancel_op.status_code == 403
+
+    # Admin pode cancelar
+    client_admin = _authenticated_client(admin_user)
+    cancel_admin = client_admin.delete(f"/api/v1/orders/{order_id}", {"note": "Cancelando"}, format="json")
+    assert cancel_admin.status_code == 200
+    assert cancel_admin.json()["status"] == "CANCELADO"
+
+
+@pytest.mark.django_db
+def test_viewer_cannot_create_order(viewer_user):
+    customer = Customer.objects.create(name="Viewer Test", cpf_cnpj="777", email="viewer@test.com")
+    client = _authenticated_client(viewer_user)
+    
+    response = client.post("/api/v1/orders", {
+        "customer_id": customer.id,
+        "idempotency_key": "viewer-test",
+        "items": [{"product_id": 1, "qty": 1}],
+    }, format="json")
+    
+    assert response.status_code == 403

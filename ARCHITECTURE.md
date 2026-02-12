@@ -140,4 +140,7 @@ Essa validação fica isolada em `domain/transitions.py`, facilitando manutenç�
   - concorrência de reserva de estoque,
   - atualização de status via rota documentada.
 
-O projeto também fornece OpenAPI para inspeção e testes exploratórios de contrato.
+O projeto também fornece OpenAPI para inspeção e testes exploratórios de contrato, que pode ser usada para validar o contrato de API.
+
+# Arquivo de Relatório de Testes
+O relatório de execução de testes está disponível no arquivo `Relatório de Execução de Testes.md` ou `Relatório de Execução de Testes.pdf`.
