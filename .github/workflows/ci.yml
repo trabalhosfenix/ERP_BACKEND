@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "master", "develop" ]
+    branches: ["main", "master", "develop"]
   pull_request:
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
       SECRET_KEY: ci-not-secret
       DEBUG: "False"
 
-      # MySQL (usa o service name "db" como host)
+      # MySQL (service name "db")
       DB_NAME: erp
       DB_USER: root
       DB_PASSWORD: root
@@ -31,6 +31,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare env file for docker compose
+        run: |
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          else
+            cat > .env << 'EOF'
+            SECRET_KEY=ci-not-secret
+            DEBUG=False
+            DB_NAME=erp
+            DB_USER=root
+            DB_PASSWORD=root
+            DB_HOST=db
+            DB_PORT=3306
+            REDIS_HOST=redis
+            REDIS_PORT=6379
+            RATE_LIMIT_PER_MINUTE=120
+            EOF
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -43,8 +62,9 @@ jobs:
       - name: Wait for MySQL health
         run: |
           for i in {1..40}; do
-            status=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose ps -q db)")
-            echo "MySQL health: $status"
+            cid="$(docker compose ps -q db)"
+            status="$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || true)"
+            echo "MySQL health: ${status:-unknown}"
             if [ "$status" = "healthy" ]; then exit 0; fi
             sleep 2
           done
@@ -53,10 +73,10 @@ jobs:
           exit 1
 
       - name: Run migrations
-        run: docker compose run --rm backend python manage.py migrate --noinput
+        run: docker compose run --rm -T backend python manage.py migrate --noinput
 
       - name: Run tests
-        run: docker compose run --rm backend pytest -q
+        run: docker compose run --rm -T backend pytest -q
 
       - name: Logs on failure
         if: failure()
