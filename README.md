@@ -1,148 +1,261 @@
-# ERP Backend - Gestão de Pedidos
 
-API REST para operações de ERP (clientes, produtos, pedidos e autenticação), construída com Django REST Framework, com foco em consistência transacional, idempotência e controle de permissões por perfil.
 
-## Stack
-- Python 3.12
-- Django + Django REST Framework
-- MySQL 8 (padrão) / SQLite (testes locais)
-- Redis 7 (rate limit e suporte de idempotência)
-- Docker / Docker Compose
-- Pytest
-- OpenAPI/Swagger (`/docs`) e Redoc (`/redoc`)
+# **ERP Backend — Gestão de Pedidos**
 
-## Módulos funcionais
-- **Autenticação e usuários** (JWT, sessão, cadastro e gestão de usuários)
-- **Clientes** (cadastro e consulta)
-- **Produtos** (cadastro, consulta e atualização de estoque)
-- **Pedidos** (criação idempotente, consulta, cancelamento e transição de status)
-- **Infra comum** (soft delete, paginação, permissões por perfil, rate limit e health check)
+API REST para operações de ERP (**clientes, produtos, pedidos e autenticação**), construída com **Django REST Framework**, com foco em:
 
-## Endpoints da API (v1)
-Base path: `/api/v1`
+* Consistência transacional  
+* Idempotência de requisições  
+* Controle de permissões por perfil  
+* Concorrência segura de estoque  
+* Testes automatizados e CI
 
-### Health e documentação
-- `GET /health`
-- `GET /docs`
-- `GET /redoc`
-- `GET /api/schema`
+Este projeto foi pensado para uso real em ambientes multiusuário onde **duplicidade de pedidos, inconsistência de estoque e falhas de concorrência não são aceitáveis**.
 
-### Autenticação
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/jwt/login`
-- `POST /api/v1/auth/jwt/refresh`
-- `POST /api/v1/auth/session/login`
-- `POST /api/v1/auth/session/logout`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/auth/users`
-- `POST /api/v1/auth/users`
-- `PATCH /api/v1/auth/users/:id`
+---
 
-### Clientes
-- `POST /api/v1/customers`
-- `GET /api/v1/customers`
-- `GET /api/v1/customers/:id`
+## **O que este projeto resolve**
 
-### Produtos
-- `POST /api/v1/products`
-- `GET /api/v1/products`
-- `PATCH /api/v1/products/:id/stock`
+De forma simples:
 
-### Pedidos
-- `POST /api/v1/orders`
-- `GET /api/v1/orders`
-- `GET /api/v1/orders/:id`
-- `PATCH /api/v1/orders/:id/status` ← **rota de alteração de status garantida**
-- `DELETE /api/v1/orders/:id` (cancelamento com reversão de estoque)
+* Cadastrar clientes e produtos  
+* Criar pedidos sem duplicação acidental  
+* Controlar estoque de forma segura  
+* Alterar status de pedidos com regras claras  
+* Permitir diferentes níveis de acesso (admin, operador, etc.)  
+* Rodar tudo em Docker com testes automatizados
 
-> Implementação de rota: o backend aceita a atualização de status por `PATCH /api/v1/orders/<id>/status`, mantendo compatibilidade com o contrato documentado em `:id`.
+---
 
-## Regras de negócio implementadas
+## **Stack Tecnológica**
 
-### Pedidos
-- Criação exige `customer_id`, `idempotency_key` e itens com `product_id` + `qty`.
-- Criação idempotente por cliente + `idempotency_key`.
-- Retry idempotente retorna o mesmo pedido (sem duplicidade).
-- Controle de estoque é atômico em transação.
-- Bloqueio pessimista (`select_for_update`) para concorrência.
-- Cancelamento só permitido quando status está em `PENDENTE` ou `CONFIRMADO`.
-- Cancelamento devolve estoque dos itens.
+| Camada | Tecnologia |
+| ----- | ----- |
+| Linguagem | Python 3.12 |
+| Framework | Django \+ Django REST Framework |
+| Banco | MySQL 8 (produção) / SQLite (testes locais) |
+| Cache / Rate Limit | Redis 7 |
+| Containerização | Docker / Docker Compose |
+| Testes | Pytest |
+| Documentação | OpenAPI / Swagger (`/docs`) \+ Redoc (`/redoc`) |
+| CI | GitHub Actions |
 
-### Fluxo de status
-Estados válidos:
-- `PENDENTE`
-- `CONFIRMADO`
-- `SEPARADO`
-- `ENVIADO`
-- `ENTREGUE`
-- `CANCELADO`
+---
 
-Transições válidas:
-- `PENDENTE -> CONFIRMADO | CANCELADO`
-- `CONFIRMADO -> SEPARADO | CANCELADO`
-- `SEPARADO -> ENVIADO`
-- `ENVIADO -> ENTREGUE`
-- `ENTREGUE` e `CANCELADO` não possuem saída
+## **Funcionalidades Principais**
 
-Endpoint:
-- `PATCH /api/v1/orders/:id/status`
-- Payload:
-  ```json
-  {
-    "status": "CONFIRMADO",
-    "note": "opcional"
-  }
-  ```
+### **Autenticação e Usuários**
 
-### Permissões por perfil
-Perfis usados via grupos do Django: `admin`, `manager`, `operator`, `viewer`.
+* JWT e sessão  
+* Cadastro e gestão de usuários  
+* Perfis de acesso via grupos Django
 
-- Leitura (`GET`) de clientes/produtos/pedidos: todos os perfis.
-- Criação de clientes/produtos: `admin`, `manager`.
-- Criação de pedidos e patch de status: `admin`, `manager`, `operator`.
-- Cancelamento de pedido: `admin`, `manager`.
-- Gestão de usuários (`/auth/users`): `admin` e `manager`.
-- Superuser possui acesso irrestrito.
+### **Clientes**
 
-### Recursos transversais
-- Soft delete (`deleted_at`) em entidades críticas.
-- Paginação padrão por `limit/offset`.
-- Busca/ordenação em endpoints de listagem.
-- Rate limit por IP para `/api/*` via Redis.
-- Histórico de status (`order_status_history`).
-- Domain events de mudança de status (`order_domain_events`).
+* Cadastro  
+* Consulta  
+* Soft delete
 
-## Como rodar localmente (Docker)
-```bash
-cp .env.example .env
-docker compose up --build
-```
+### **Produtos**
 
-URLs principais:
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-- Redoc: `http://localhost:8000/redoc`
+* Cadastro  
+* Consulta  
+* Atualização de estoque  
+* SKU único
 
-## Rodando testes localmente
-```bash
-cd backend
-DB_ENGINE=sqlite python manage.py migrate
-cd ..
-DB_ENGINE=sqlite pytest
-```
+### **Pedidos**
 
-## Estrutura de pastas
-- `backend/apps/authentication` autenticação, sessão, JWT e gestão de usuários
-- `backend/apps/customers` domínio de clientes
-- `backend/apps/products` domínio de produtos
-- `backend/apps/orders` domínio de pedidos, serviços e regras de status
-- `backend/apps/common` componentes compartilhados
-- `backend/config` configuração Django e roteamento raiz
-- `tests/` testes unitários e de integração
-- `frontend/` template simples para interação manual
+* Criação idempotente  
+* Consulta e detalhamento  
+* Cancelamento com reversão de estoque  
+* Transição de status com máquina de estados  
+* Histórico de status  
+* Eventos de domínio
 
-## Decisões arquiteturais
-Veja `ARCHITECTURE.md` para visão técnica completa (camadas, transações, idempotência, concorrência, eventos e compatibilidade).
+### **Infraestrutura Comum**
 
-## Guia operacional Docker
-Para um roteiro de inicialização + smoke test completo no ambiente Docker, consulte `docs/GUIA_DOCKER_TESTES.md`.
+* Soft delete  
+* Paginação  
+* Rate limit por IP  
+* Health check  
+* Permissões por perfil
+
+---
+
+## **Endpoints da API (v1)**
+
+**Base:** `/api/v1`
+
+### **Health e Docs**
+
+* `GET /health`  
+* `GET /docs`  
+* `GET /redoc`  
+* `GET /api/schema`
+
+### **Autenticação**
+
+* `POST /auth/register`  
+* `POST /auth/jwt/login`  
+* `POST /auth/jwt/refresh`  
+* `POST /auth/session/login`  
+* `POST /auth/session/logout`  
+* `GET /auth/me`
+
+### **Clientes**
+
+* `POST /customers`  
+* `GET /customers`  
+* `GET /customers/:id`
+
+### **Produtos**
+
+* `POST /products`  
+* `GET /products`  
+* `PATCH /products/:id/stock`
+
+### **Pedidos**
+
+* `POST /orders`  
+* `GET /orders`  
+* `GET /orders/:id`  
+* `PATCH /orders/:id/status`  
+* `DELETE /orders/:id`
+
+---
+
+## **Regras de Negócio Importantes**
+
+### **Idempotência de Pedido**
+
+Evita duplicidade quando o cliente envia a mesma requisição duas vezes.
+
+Chave única:
+
+`(customer_id + idempotency_key)`
+
+### **Controle de Estoque**
+
+* Transação atômica  
+* Lock pessimista (`select_for_update`)  
+* Concorrência segura
+
+### **Cancelamento**
+
+* Permitido apenas em `PENDENTE` ou `CONFIRMADO`  
+* Devolve estoque automaticamente
+
+---
+
+## **Fluxo de Status do Pedido**
+
+`PENDENTE → CONFIRMADO → SEPARADO → ENVIADO → ENTREGUE`  
+          `↘ CANCELADO`
+
+`ENTREGUE` e `CANCELADO` são estados finais.
+
+---
+
+## **Permissões por Perfil**
+
+Perfis baseados em **Grupos do Django**:
+
+| Ação | Perfis |
+| ----- | ----- |
+| Leitura | Todos |
+| Criar Cliente/Produto | Admin, Manager |
+| Criar Pedido | Admin, Manager, Operator |
+| Alterar Status | Admin, Manager, Operator |
+| Cancelar Pedido | Admin, Manager |
+| Gestão de Usuários | Admin, Manager |
+| Superuser | Acesso total |
+
+---
+
+## **Executando Localmente (Docker)**
+
+`cp .env.example .env`  
+`docker compose up --build`
+
+URLs:
+
+* API → [http://localhost:8000](http://localhost:8000)  
+* Swagger → [http://localhost:8000/docs](http://localhost:8000/docs)  
+* Redoc → [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+---
+
+## **Rodando Testes**
+
+### **Com SQLite (rápido)**
+
+`DB_ENGINE=sqlite pytest`
+
+### **Com Docker (ambiente real)**
+
+`docker compose exec backend pytest`
+
+---
+
+## **Integração Contínua (CI)**
+
+O projeto utiliza **GitHub Actions** para:
+
+* Build automático  
+* Execução de migrations  
+* Execução da suíte de testes  
+* Validação de pull requests  
+* Prevenção de regressões
+
+---
+
+## **Estrutura de Pastas**
+
+`backend/apps/authentication  → usuários e login`  
+`backend/apps/customers       → clientes`  
+`backend/apps/products        → produtos`  
+`backend/apps/orders          → pedidos e regras de negócio`  
+`backend/apps/common          → componentes compartilhados`  
+`backend/config               → settings Django`  
+`tests/                       → testes unitários e integração`  
+`frontend/                    → interface simples de apoio`
+
+---
+
+## **Decisões Arquiteturais**
+
+Detalhamento técnico completo em:
+
+`ARCHITECTURE.md`
+
+---
+
+## **Guia Operacional Docker**
+
+Para smoke tests e fluxo completo:
+
+`docs/GUIA_DOCKER_TESTES.md`
+
+---
+
+## **Para Quem é Este Projeto**
+
+* Desenvolvedores backend  
+* Estudantes de arquitetura REST  
+* Times que precisam de referência de ERP simples  
+* Demonstração de boas práticas com Django \+ Docker \+ CI
+
+---
+
+### **Resumo Técnico**
+
+Este backend demonstra:
+
+* Arquitetura em camadas  
+* Idempotência forte  
+* Controle de concorrência  
+* Máquina de estados  
+* Testes automatizados  
+* CI/CD preparado  
+* Boas práticas de API REST
+
