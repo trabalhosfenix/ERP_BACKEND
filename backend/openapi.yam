@@ -388,6 +388,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrderCreate'
           description: ''
+  /api/v1/orders/{id}/status:
+    patch:
+      operationId: api_v1_orders_status_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOrderStatusPatch'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOrderStatusPatch'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOrderStatusPatch'
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderStatusPatch'
+          description: ''
   /api/v1/orders/{id}:
     get:
       operationId: api_v1_orders_retrieve
@@ -425,38 +457,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/v1/orders/{id}/status:
-    patch:
-      operationId: api_v1_orders_status_partial_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - api
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedOrderStatusPatch'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedOrderStatusPatch'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedOrderStatusPatch'
-      security:
-      - cookieAuth: []
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderStatusPatch'
-          description: ''
   /api/v1/products:
     get:
       operationId: api_v1_products_list

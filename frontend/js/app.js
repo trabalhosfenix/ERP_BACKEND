@@ -264,8 +264,8 @@ const app = {
       html: `
         <div style="text-align: left;">
           <p style="margin-bottom: 1rem; color: #666;">Estoque atual: <strong>${currentQty} unidades</strong></p>
-          <label for="swal-stock" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Nova Quantidade:</label>
-          <input type="number" id="swal-stock" class="swal2-input" value="${currentQty}" min="0" style="width: 100%; padding: 0.75rem;">
+          <label for="swal-stock" style="display: block; width: -webkit-fill-available; margin-bottom: 0.5rem; font-weight: 500;">Nova Quantidade:</label>
+          <input type="number" id="swal-stock" class="swal2-input" value="${currentQty}" min="0" style="width: -webkit-fill-available; height: auto; padding: 0.75rem;">
         </div>
       `,
       focusConfirm: false,
@@ -630,13 +630,13 @@ const app = {
         <div style="text-align: left;">
           <p style="margin-bottom: 1rem; color: #666;">Status atual: <strong>${statusOptions[currentStatus] || currentStatus}</strong></p>
           <label for="swal-status" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Novo Status:</label>
-          <select id="swal-status" class="swal2-input" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem;">
+          <select id="swal-status" class="swal2-input" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem; height: auto;">
             ${Object.entries(statusOptions).map(([value, label]) => 
               `<option value="${value}" ${value === currentStatus ? 'selected' : ''}>${label}</option>`
             ).join('')}
           </select>
-          <label for="swal-note" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Observação (opcional):</label>
-          <textarea id="swal-note" class="swal2-textarea" placeholder="Adicione uma observação sobre a mudança de status..." style="width: 100%; min-height: 80px;"></textarea>
+          <label for="swal-note" style="display: block; width: -webkit-fill-available; margin-bottom: 0.5rem; font-weight: 500;">Observação (opcional):</label>
+          <textarea id="swal-note" class="swal2-textarea" placeholder="Adicione uma observação sobre a mudança de status..." style="width: -webkit-fill-available; height: 100px; min-height: 80px;"></textarea>
         </div>
       `,
       focusConfirm: false,
@@ -784,7 +784,7 @@ const app = {
         <div style="text-align: left;">
           <p style="margin-bottom: 1rem; color: #666;">Perfil atual: <strong>${profileOptions[currentProfile] || currentProfile}</strong></p>
           <label for="swal-profile" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Novo Perfil:</label>
-          <select id="swal-profile" class="swal2-input" style="width: 100%; padding: 0.75rem;">
+          <select id="swal-profile" class="swal2-input" style="width: 100%; padding: 0.75rem; height: auto;">
             ${Object.entries(profileOptions).map(([value, label]) => 
               `<option value="${value}" ${value === currentProfile ? 'selected' : ''}>${label}</option>`
             ).join('')}

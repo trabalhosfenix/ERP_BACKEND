@@ -103,6 +103,7 @@ main {
 .btn-primary {
   background: #667eea;
   color: white;
+  max-width: max-content;
 }
 
 .btn-primary:hover {
@@ -278,9 +279,9 @@ tr:hover {
   padding: 2rem;
   border-radius: 12px;
   box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-  max-width: 600px;
+  max-width: max-content;
   width: 90%;
-  max-height: 90vh;
+  /* max-height: 90vh; */
   overflow-y: auto;
 }
 
@@ -288,6 +289,8 @@ tr:hover {
   margin-bottom: 1.5rem;
   color: #2d3748;
   font-size: 1.4rem;
+  max-width: max-content;
+  width: 100%;
 }
 
 .modal-actions {

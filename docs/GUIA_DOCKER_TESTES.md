@@ -61,6 +61,11 @@ docker compose exec backend pytest tests/integration/test_orders_api.py
 docker compose exec backend pytest tests/integration/test_orders_api.py -k patch_order_status_route_with_id_param_alias
 ```
 
+### 4.4 Gerar OpenAPI
+```bash
+ docker compose exec backend python manage.py spectacular --file openapi.yam
+```
+
 ## 5) Smoke test ponta a ponta (manual)
 
 > A API exige autenticação. O fluxo abaixo cria usuário admin, autentica, cria customer, produto, pedido e altera status.
