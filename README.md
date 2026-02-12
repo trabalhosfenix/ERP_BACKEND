@@ -199,7 +199,9 @@ URLs:
 **Importante:** Use apenas para desenvolvimento e testes.
 
 `export DJANGO_DEBUG=1`
+
 `export DB_ENGINE=sqlite`
+
 `python manage.py runserver`
 
 ### 
@@ -209,6 +211,7 @@ URLs:
 **Importante:** Use apenas para desenvolvimento e testes.
 
 `python manage.py seed`
+
 `DJANGO_DEBUG=1 DB_ENGINE=sqlite python manage.py seed`
 
 ### **Executando Testes Localmente**
