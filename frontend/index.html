@@ -1,10 +1,13 @@
+
+{% load static %}
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ERP - Gestão</title>
-    <link rel="stylesheet" href="css/style.css" />
+    <!-- :aplicar urlfor -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}" />
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   </head>
   <body>
@@ -107,6 +110,6 @@
       </section>
     </main>
 
-    <script src="js/app.js"></script>
+    <script src="{% static 'js/app.js' %}"></script>
   </body>
 </html>
